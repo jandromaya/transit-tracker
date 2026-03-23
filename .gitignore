@@ -1,0 +1,5 @@
+.DS_STORE
+secrets.h
+build/
+.venv
+.vscode
