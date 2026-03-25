@@ -32,3 +32,17 @@ This [other transit tracker project](https://transit-tracker.eastsideurbanism.or
 
 So all together I think that's all the hardware that I need  to connect the matrix to an ESP32.
 
+---
+
+Ok that was this morning, tonight I set up the file structure for esp idf and I will read some of the api docs before I go to bed. 
+
+## mar. 24. 2026
+
+Today I:
+
+- went through and annotated the bus time API, gonna read the other one later (maybe omw to work)
+- Went through the train time API (I did do it omw to work and also before bed lol)
+
+As far as the bus time API goes, it looks like the main thing to worry about is just "predictions" and probably delays/cancellations (which are part of the dynamic action types). I highilighted the relevant fields of the output that I need to worry about in my local copy of the document. I'll need cJSON.
+
+for the traintime API, it looks like the "Arrivals API" from page 5 will be the most useful. Appendix D also has useful information on how to turn this output into "minutes until this train arrives".
