@@ -14,8 +14,8 @@
 #define CONNECTION_TIMEOUT_SEC 10
 static const char *TAG = "transit-tracker";
 
-static char *URL = "https://ctabustracker.com/bustime/api/v3/gettime?key=" 
-                         BUS_TRACKER_API_KEY "&unixTime=true&format=json";
+static char *URL = "https://ctabustracker.com/bustime/api/v3/getpredictions?key=" 
+                         BUS_TRACKER_API_KEY "&rt=151&stpid=68&format=json";
 
 TaskHandle_t send_task_handle = NULL;
 TaskHandle_t recv_task_handle = NULL;
