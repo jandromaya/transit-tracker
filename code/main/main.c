@@ -8,17 +8,17 @@
 #include "esp_event.h"
 #include "esp_crt_bundle.h"
 #include "https_client.h"
+#include "cJSON.h"
 
 #include "secrets.h"
 
 #define CONNECTION_TIMEOUT_SEC 10
+
 static const char *TAG = "transit-tracker";
 
-static char *URL = "https://ctabustracker.com/bustime/api/v3/getpredictions?key=" 
-                         BUS_TRACKER_API_KEY "&rt=151&stpid=68&format=json";
-
-TaskHandle_t send_task_handle = NULL;
-TaskHandle_t recv_task_handle = NULL;
+#define BUS_URL_ROOT "https://www.ctabustracker.com/bustime/api/v3/"
+#define BUS_URL_KEY "key=" BUS_TRACKER_API_KEY
+#define BUS_URL_FORMAT "&format=json"
 
 esp_err_t connect_to_wifi(void) {
     esp_err_t esp_ret;
@@ -72,35 +72,97 @@ esp_err_t connect_to_wifi(void) {
     return ESP_OK;
 }
 
-void vSendHTTPRequestTask(void *pvParameters)
+/**
+ * Task that makes GET request for bus route predictions, sending predicitons to queue in pvParameters
+ * @param pvParameters: expects handle to a queue of char* buffers
+ * 
+ */
+void vGetBusPredictionsTask(void *pvParameters)
 {
+    char *URL = BUS_URL_ROOT "getpredictions?" BUS_URL_KEY 
+                "&rt=1,7,28&stpid=1583,4884,74&top=6"
+                BUS_URL_FORMAT;
+    QueueHandle_t buffer_queue = (QueueHandle_t)pvParameters;
     // infinite loop like most tasks
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        ESP_LOGI(TAG, "In the HTTP send taskk");
-        perform_get_request(URL);
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        ESP_LOGI(TAG, "Leaving the HTTP send taskk...");
-        xTaskNotifyGive(recv_task_handle);
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        ESP_LOGI(TAG, "In the bus predictions task");
+        char *buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
+        perform_get_request(URL, buf);
+        xQueueSend(buffer_queue, &buf, pdMS_TO_TICKS(100));
+        ESP_LOGI(TAG, "Leaving the bus predictions task...");
+        free(buf);
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "Send task high water mark %lu", watermark);
+        ESP_LOGI(TAG, "Bus prediction task high water mark %lu", watermark);
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
 }
 
-void vReceiveHTTPRequestTask(void *pvParameters)
+/**
+ * Task that makes GET request for CTA's system time, printing response
+ */
+void vGetCTATimeTask(void *pvParameters)
 {
     // infinite loop like most tasks
+    char *URL = BUS_URL_ROOT "gettime?" BUS_URL_KEY BUS_URL_FORMAT;
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        ESP_LOGI(TAG, "In the HTTP receive taskk");
-        vTaskDelay(pdMS_TO_TICKS(5000));
-        ESP_LOGI(TAG, "Leaving the HTTP receive taskk...");
-        xTaskNotifyGive(send_task_handle);
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        ESP_LOGI(TAG, "In the CTA time task");
+        char *buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
+        perform_get_request(URL, buf);
+        printf("%s\n", buf);
+        
+        ESP_LOGI(TAG, "Leaving the CTA time task...");
+        free(buf);
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "Receive task high water mark %lu", watermark);
+        ESP_LOGI(TAG, "CTA time prediction task high water mark %lu", watermark);
+        vTaskDelay(pdMS_TO_TICKS(30000));
     }
+}
+
+/**
+ * Task that parses JSON data from queue passed into pvParameters. Rigt now, it only parses
+ * prediciton requests.
+ * @param pvParameters: expects handle to a queue of char* buffers
+ */
+void vParseAPIResponse(void *pvParameters)
+{
+    QueueHandle_t buffer_queue = (QueueHandle_t)pvParameters;
+    BaseType_t ret;
+    for (;;) {
+        char *buf;
+        ret = xQueueReceive(buffer_queue, &buf, portMAX_DELAY);
+        if (ret == pdPASS) {
+            ESP_LOGI(TAG, "Received a buffer, parsing...");
+            cJSON *json;
+            cJSON *response;
+            cJSON *predictions;
+            cJSON *prediction;
+            json = cJSON_Parse(buf);
+            if (json == NULL) {
+                ESP_LOGE(TAG, "Failed to parse JSON response");
+            }
+            else {
+                response = cJSON_GetObjectItem(json, "bustime-response");
+                predictions = cJSON_GetObjectItem(response, "prd");
+                cJSON_ArrayForEach(prediction, predictions) {
+                    cJSON *rt = cJSON_GetObjectItemCaseSensitive(prediction, "rt");
+                    cJSON *prdctdn = cJSON_GetObjectItemCaseSensitive(prediction, "prdctdn");
+                    if ((rt == NULL) || (prdctdn == NULL)) {
+                        ESP_LOGE(TAG, "Couldn't parse");
+                    }
+                    else {
+                        printf("Prediction: %s, %s\n", rt->valuestring, prdctdn->valuestring);
+                    }
+            }
+            }
+            
+            cJSON_Delete(json);
+        }
+        else {
+            ESP_LOGI(TAG, "Couldn't receive buffer (queue empty)? %s", ret);
+        }
+        ESP_LOGI(TAG, "Leaving parsing task");
+        ESP_LOGI(TAG, "Parse task high water mark: %lu", uxTaskGetStackHighWaterMark(NULL));
+    }    
 }
 
 void app_main(void)
@@ -112,13 +174,20 @@ void app_main(void)
         ESP_LOGE(TAG, "Wi-Fi connection failed. Aborting.");
         abort();
     }
+    QueueHandle_t buffer_queue = xQueueCreate(2, sizeof(char*));
 
-    xTaskCreate(vSendHTTPRequestTask, "HTTP send task", 4096, NULL, 3, &send_task_handle);
-    xTaskCreate(vReceiveHTTPRequestTask, "HTTP receive task", 2048, NULL, 3, &recv_task_handle);
-    xTaskNotifyGive(send_task_handle);
+    xTaskCreate(vParseAPIResponse, "Parse Response Task", 4096, (void *)buffer_queue, 4, NULL); // is that the right priority? idk consider
+    xTaskCreate(vGetCTATimeTask, "CTA Time Task", 4096, NULL, 3, NULL);
+    vTaskDelay(pdMS_TO_TICKS(25000));
+    xTaskCreate(vGetBusPredictionsTask, "Bus Predictions Task", 4096, (void *)buffer_queue, 3, NULL);
+    
 
     for (;;) {
-        ESP_LOGI(TAG, "This is a test: %s, %s", TRAIN_TRACKER_API_KEY, BUS_TRACKER_API_KEY);
+        // Get current free heap
+        ESP_LOGD(TAG, "Free heap: %lu bytes\n", esp_get_free_heap_size());
+
+        // Get the lowest the heap has ever been since boot
+        ESP_LOGD(TAG, "Minimum free heap ever: %lu bytes\n", esp_get_minimum_free_heap_size());
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }

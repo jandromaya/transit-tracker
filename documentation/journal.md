@@ -46,3 +46,42 @@ Today I:
 As far as the bus time API goes, it looks like the main thing to worry about is just "predictions" and probably delays/cancellations (which are part of the dynamic action types). I highilighted the relevant fields of the output that I need to worry about in my local copy of the document. I'll need cJSON.
 
 for the traintime API, it looks like the "Arrivals API" from page 5 will be the most useful. Appendix D also has useful information on how to turn this output into "minutes until this train arrives".
+
+## Mar. 26, 2026
+
+Yesteday and today I started coding up some basic programs, just getting the ESP32 connected to Wi-Fi and sending https requests and messing around with different things along the way. 
+
+At first I was messing around with FreeRTOS tasks and semaphores, then I was using task notifications. Turns out I don't think I'll really need any of that, but it's in the code at the moment because that's just what I was trying out.
+
+Right now, the ESP32 can get predictions of routes. From here, I need to parse the JSON responses so that the output is actually usable. I also will need to get multiple routes at once (which I'm pretty sure I can just do with the API).
+
+## Mar. 30, 2026
+
+I am travelling right now but I have continued working on this whenever possible. Here are a few design things I have been thinking about:
+
+### Design thoughts
+
+**General flow of the program**
+
+- 30 second cycles
+- 24 seconds
+  - Output routes 
+  - This seems kind of long, but depending on the number of routes you are retrieving you may have to scroll to get through all of them
+    - Could be three screens of routes, each shown for 8 seconds for example
+- 3 seconds
+  - Output current time
+    - Can just get this from CTA API or with SNTP
+  - Could probably be taken out, but I just think it would be useful
+- 3 seconds
+  - Output other info
+  - Maybe just "CTA tracker" or if there are different modes, maybe just the name of the mode
+
+### Considerations/Edge cases
+
+- Outdated predictions
+  - Sometimes prediction timestamps are outdated (i.e., don't match the current time in the CTA system)
+  - May want to check that the predictions have a timestamp within a threshold amount of time from the current time
+- May want to consider dynamically allocating memory in perform_get_request()
+  - if so, make it caller-owned
+- What priority should the parsing task have?
+

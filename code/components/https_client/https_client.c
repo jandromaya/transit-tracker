@@ -1,9 +1,6 @@
 #include <string.h>
 #include "https_client.h"
 
-#define MAX_HTTP_RECV_BUFFER 512
-#define MAX_HTTP_OUTPUT_BUFFER 2048
-
 static const char *TAG = "HTTP_CLIENT";
 
 char *URL = "";
@@ -121,11 +118,11 @@ static esp_err_t https_with_url(void)
     return err;
 }
 
-esp_err_t perform_get_request(char *request_url)
+esp_err_t perform_get_request(char *request_url, char *output_buffer)
 {
     esp_err_t esp_ret;
     URL = request_url;
     esp_ret = https_with_url();
-    printf("%s\n", response_buffer);
+    strcpy(output_buffer, response_buffer);
     return esp_ret;
 }

@@ -43,6 +43,7 @@ static void on_wifi_event(void *arg,
                           int32_t event_id,
                           void *event_data)
 {
+    esp_err_t esp_ret;
     // Determine event type
     switch (event_id)
     {
@@ -84,7 +85,7 @@ static void on_wifi_event(void *arg,
             // Register interface receive callback (esp-idf docs section 2.4)
             wifi_netif_driver_t driver = esp_netif_get_io_driver(s_wifi_netif);
             if (!esp_wifi_is_if_ready_when_started(driver)) {
-                esp_err_t esp_ret = esp_wifi_register_if_rxcb(driver,
+                esp_ret = esp_wifi_register_if_rxcb(driver,
                                                               esp_netif_receive,
                                                               s_wifi_netif);
 
@@ -169,7 +170,7 @@ static void on_ip_event(void *arg,
 #endif
 
 #if CONFIG_WIFI_STA_CONNECT_IPV6 || CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
-        case IP_EVENT_STA_GOT_IP6:
+        case IP_EVENT_GOT_IP6:
 
             /// Make sure we have a valid inteface handle
             if (s_wifi_netif == NULL) {
@@ -187,11 +188,9 @@ static void on_ip_event(void *arg,
             xEventGroupSetBits(s_wifi_event_group, WIFI_STA_IPV6_OBTAINED_BIT);
 
             ip_event_got_ip6_t *event_ipv6 = (ip_event_got_ip6_t *)event_data;
-            esp_netif_ip6_info_t *ip6_info = event_ipv6->ip6_info;
+            esp_netif_ip6_info_t *ip6_info = &event_ipv6->ip6_info;
             ESP_LOGI(TAG, "WiFi IPv6 address obtained");
             ESP_LOGI(TAG, "  IP address: " IPV6STR, IPV62STR(ip6_info->ip));
-            ESP_LOGI(TAG, "  Netmask: " IPV6STR, IPV62STR(ip6_info->netmask));
-            ESP_LOGI(TAG, "  Gateway: " IPV6STR, IPV62STR(ip6_info->gw));
 
             break;
 #endif
@@ -366,7 +365,7 @@ static void wifi_start(void *esp_netif,
 #if CONFIG_WIFI_STA_CONNECT_IPV6 || CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
     // (s1.3) Register IP event: station got ipv4 address
     esp_ret = esp_event_handler_register(IP_EVENT,
-                                         IP_EVENT_STA_GOT_IP6,
+                                         IP_EVENT_GOT_IP6,
                                          &on_ip_event,
                                          NULL);
     if (esp_ret != ESP_OK) {
@@ -523,7 +522,7 @@ static void wifi_start(void *esp_netif,
 #if CONFIG_WIFI_STA_CONNECT_IPV6 || CONFIG_WIFI_STA_CONNECT_UNSPECIFIED
     // Unregister IP event: station got ipv6 address
     esp_ret = esp_event_handler_unregister(IP_EVENT,
-                                         IP_EVENT_STA_GOT_IP6,
+                                         IP_EVENT_GOT_IP6,
                                          &on_ip_event);
     if (esp_ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to unregister IPv6 event handler");
@@ -604,8 +603,7 @@ static void wifi_start(void *esp_netif,
  }
 
  // Attempt reconnection to WiFi
- esp_err_t wifi_sta_reconnect(void) 
- {
+ esp_err_t wifi_sta_reconnect(void) {
     esp_err_t esp_ret;
 
     // Stop WiFi
@@ -625,7 +623,7 @@ static void wifi_start(void *esp_netif,
     return ESP_OK;
  }
 
- bool wait_for_wifi(EventGroupHandle_t wifi_event_group, int32_t timeout_sec) 
+bool wait_for_wifi(EventGroupHandle_t wifi_event_group, int32_t timeout_sec) 
  {
     EventBits_t wifi_event_bits;
 
