@@ -11,7 +11,13 @@
 
 - [x] ~~Read Bus and Train APIs~~ (done Mar 24)
 
-- [ ] Make rough ESP32 prototype that prints bus data to command line
+- [x] ~~Make rough ESP32 prototype that prints bus data to command line~~ (done Mar. 31)
+
+  - [x] ~~Print raw bus data to command line~~ (done Mar. 26)
+
+  - [x] ~~Parse JSON response and print parsed response~~ (done Mar. 30)
+
+  - [x] ~~Set up the parse task to handle different request types~~ (done Mar. 31)
 
 - [ ] Add train data to the ESP32 prototype
 

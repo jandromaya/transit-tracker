@@ -1,4 +1,5 @@
-#pragma once
+#ifndef HTTPS_CLIENT_H
+#define HTTPS_CLIENT_H
 
 #include <sys/param.h>
 #include "esp_log.h"
@@ -11,3 +12,4 @@
 #define MAX_HTTP_OUTPUT_BUFFER 4095
 
 esp_err_t perform_get_request(char *request_url, char *output_buffer);
+#endif

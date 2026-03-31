@@ -85,3 +85,13 @@ I am travelling right now but I have continued working on this whenever possible
   - if so, make it caller-owned
 - What priority should the parsing task have?
 
+## Mar. 31, 2026
+
+Worked on this a little bit today. I updated the parse task to handle http responses from different sources, and right now it handles data from the bus prediction task and the get time task, printing the received data to the console with printf.
+
+In the future, I want to mainly do two things:
+
+1. Add the train data
+2. Add some filtering of what to show on the display (for example, if a response's timestamp is too old, it should not show)
+
+Once this is all handled, the minimum API side of the project is pretty close to being done I think. For a basic proof of concept, all I need to do now would be connecting all this stuff to an external display and printing
