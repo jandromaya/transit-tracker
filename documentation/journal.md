@@ -3,7 +3,7 @@ This is an engineering journal for me to document my progress. I don't know how 
 ## Mar 22, 2026
 Today I started actually working on this project because I want to seriously commit to it. I have been thinking of making a transit tracker screen for a while because I think it would look cool and it sounds fun.
 
-As of now, I have just gotten my API keys from the CTA webiste and I started this repo. I addedsome things to do in todo.md (although I should add some stuff about researching hardware to buy on there), and that's kind of all I have done for this today.
+As of now, I have just gotten my API keys from the CTA website and I started this repo. I added some things to do in todo.md (although I should add some stuff about researching hardware to buy on there), and that's kind of all I have done for this today.
 
 This is my overall game plan:
 - Read API docs to get a rough idea of how the API works
@@ -36,7 +36,7 @@ So all together I think that's all the hardware that I need  to connect the matr
 
 Ok that was this morning, tonight I set up the file structure for esp idf and I will read some of the api docs before I go to bed. 
 
-## mar. 24. 2026
+## Mar. 24. 2026
 
 Today I:
 
@@ -95,3 +95,48 @@ In the future, I want to mainly do two things:
 2. Add some filtering of what to show on the display (for example, if a response's timestamp is too old, it should not show)
 
 Once this is all handled, the minimum API side of the project is pretty close to being done I think. For a basic proof of concept, all I need to do now would be connecting all this stuff to an external display and printing
+
+## Apr. 1, 2026
+
+Okay, so I have been thinking a bit more about what I need hardware-wise, as I realized my earlier parts list is not great. Adafruit offers [this breakout board](https://learn.adafruit.com/adafruit-matrixportal-s3/pinouts) for ESP32 matrix control.  The breakout board itself is out of stock, but I can take the components and make my own thing. Here's what I need (based on what they have on this board):
+
+| **Part**                     | **Quantity** | Unit **Price** | **Total Price** | **MPN**               | **Link**                                                     |
+| ---------------------------- | ------------ | -------------- | --------------- | --------------------- | ------------------------------------------------------------ |
+| LED Matrix                   | 2            | 17.99          |                 | RGB-Matrix-P2.5-64x32 | [Waveshare](https://www.waveshare.com/rgb-matrix-p2.5-64x32.htm?sku=23707) |
+| HUB-75 Socket (maybe a 2x10) | 1            | 1.09           |                 | S6106-ND              | [DigiKey](https://www.digikey.com/en/products/detail/sullins-connector-solutions/PPPC102LFBN-RC/807245) |
+| Level shifter                | 2            | 0.95           |                 | ahct245               | [DigiKey](https://www.digikey.com/en/products/detail/texas-instruments/SN74AHCT245N/277122?s=N4IgjCBcoGwJxVAYygMwIYBsDOBTANCAPZQDaIALGGABxwDsIAuoQA4AuUIAyuwE4BLAHYBzEAF9xhAExkQ6ABZJ20igFZmhGIhACAJlwC0YAAyy2nSCBCF2AT1a4ue7CklA) |
+| USB-C Power Supply           | 1            | 7.95           |                 | 1994                  | [Adafruit](https://www.adafruit.com/product/1994)            |
+| USB-C cable                  | 1            | 5.25           |                 | 5031                  | [DigiKey](https://www.digikey.com/en/products/detail/qualtek/3021107-01M/13181649?gclsrc=aw.ds&gad_source=1&gad_campaignid=20232005509&gbraid=0AAAAADrbLljWyom9jD6fqw8Tg_-qsQaIl&gclid=Cj0KCQjws83OBhD4ARIsACblj18_hTfEJbudFK00JUDDqoENaiXXbeZN6epAEKazdsYqEp8OduHiS_EaAhE2EALw_wcB) |
+| 2x8 IDC Cable                | 1            | 1.95           |                 | 4170                  | [Adafruit](https://www.adafruit.com/product/4170?srsltid=AfmBOorfjdOh5D1p04Qbc45afL_Oq-bk-VF9IhERsBwBOS83qW3fk6iHNpM) |
+| HUB-75 Plug                  | 1            | 0.32           |                 | S9171-ND              | [DigiKey](https://www.digikey.com/en/products/detail/sullins-connector-solutions/SBH11-PBPC-D08-ST-BK/1990064?_gl=1*j1ohis*_up*MQ..*_gs*MQ..&gclid=Cj0KCQjws83OBhD4ARIsACblj1-lxpeixAYIAsuX1di81NiLDhc_4hT3QPhrwWIrpjFBDfc82UlnVEAaAoDSEALw_wcB&gclsrc=aw.ds&gbraid=0AAAAADrbLlg19u8zw4DT2EaTiBKWrGHyu) |
+
+Some thoughts:
+
+- Power
+  - On the breakout board, they power the matrix with the USB-C port
+    - The USB-C port connects to two M3-threaded screw terminals
+  - ESP32 seems to be powered with either JST connector or USB-C 
+- HUB-75 connector
+  - On the breakout board i put up there, they use a 2x10 instead of a 2x8. not totally sure why, but maybe it's helpful
+  - Also, you could either have a socket here (i.e., a female connector) or a plug
+    - If you have the plug, then you need to buy an IDC cable to connect to the matrix
+- Multiplexer type thing
+  - AHCT245
+  - These were included in the adafruit breakout board I found
+  - What are they?
+    - **8-bit Octal Bus Transceiver**
+  - Why do they use it?
+    - Level shifting
+    - Basically, the ESP32 is going to output at 3.3V, but the matrix needs input at 5V. This specific device helps bridge that gap
+
+## apr. 6, 2026
+
+Today I filled in the table above and bought everything. Exciting!
+
+^ that was in the morning.
+
+I added some (very basic) train API functionality. It's basically just performing a get request and outputting the response. Some next steps would be to format the reponse a little more (i.e., in countdown format like the buses). I also need to add my own logic for delays/DUE notifications because the train API doesn't do this automatically like the bus one.
+
+I was also thinking... It may be better to delay the different tasks relative to each other rather than having the big offset at the beginning I currently have. Think about this more.
+
+Regardless, I think my task scheduling may be a little messed up. The train task doesn't seem to be executing as often as I intended. Look into this also.

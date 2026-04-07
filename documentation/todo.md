@@ -21,4 +21,16 @@
 
 - [ ] Add train data to the ESP32 prototype
 
+  - [ ] perform a train get request
+  
+  - [ ] format predictions into countdown
+  
+  - [ ] Add delay/due functionality
+  
+- [ ] Make GET request parameters into variables (rn they're hard-coded)
+
+- [ ] Filter old predictions based on precition time stamp
+
+- [ ] Have some sort of output when nothing is scheduled
+
   
