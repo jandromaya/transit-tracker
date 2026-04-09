@@ -16,13 +16,24 @@
 
 static const char *TAG = "transit-tracker";
 
-#define BUS_URL_ROOT "https://www.ctabustracker.com/bustime/api/v3/"
-#define BUS_URL_KEY "key=" BUS_TRACKER_API_KEY
-#define BUS_URL_FORMAT "&format=json"
+#define BUS_URL_ROOT    "https://www.ctabustracker.com/bustime/api/v3/"     // root of url
+#define BUS_URL_KEY     "key=" BUS_TRACKER_API_KEY  // api key
+#define BUS_URL_FORMAT  "&format=json"  // format of the response
+#define BUS_URL_ROUTES  "&rt=4,7,28"    // routes to get info about
+#define BUS_URL_STPID   "&stpid=1583,4884,74"   // stops to get info about
+#define BUS_URL_TOP     "&top=6"    // max number of predictions to receive
+#define BUS_URL         BUS_URL_ROOT "getpredictions?" BUS_URL_KEY BUS_URL_ROUTES BUS_URL_STPID \
+                        BUS_URL_TOP "&unixTime=true" BUS_URL_FORMAT
 
-#define TRAIN_URL_ROOT "http://lapi.transitchicago.com/api/1.0/"
-#define TRAIN_URL_KEY "key=" TRAIN_TRACKER_API_KEY
-#define TRAIN_URL_FORMAT "&outputType=JSON"
+#define TRAIN_URL_ROOT "http://lapi.transitchicago.com/api/1.0/"    // root of url
+#define TRAIN_URL_KEY "key=" TRAIN_TRACKER_API_KEY  // api key
+#define TRAIN_URL_FORMAT "&outputType=JSON" // format of the response
+#define TRAIN_URL_MAPID     "&mapid=41490"  // station to get info about
+#define TRAIN_URL_MAX       "&max=5"    // max number of predictions to receive
+#define TRAIN_URL       TRAIN_URL_ROOT "ttarrivals.aspx?" TRAIN_URL_KEY TRAIN_URL_MAPID \
+                        TRAIN_URL_MAX TRAIN_URL_FORMAT
+
+#define TIME_URL BUS_URL_ROOT "gettime?" BUS_URL_KEY "&unixTime=true" BUS_URL_FORMAT
 
 esp_err_t connect_to_wifi(void) {
     esp_err_t esp_ret;
@@ -76,119 +87,23 @@ esp_err_t connect_to_wifi(void) {
     return ESP_OK;
 }
 
-/**
- * Task that sends GET request for bus route predictions, sending predicitons to queue in pvParameters
- * @param pvParameters: expects handle to a queue of QueueData_t items
- * 
- */
-void vGetBusPredictionsTask(void *pvParameters)
+void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJSON *arrT)
 {
-    char *URL = BUS_URL_ROOT "getpredictions?" BUS_URL_KEY 
-                "&rt=4,7,28&stpid=1583,4884,74&top=6&unixTime=true" // TODO: make these not hard coded
-                BUS_URL_FORMAT;
-    QueueHandle_t response_queue = (QueueHandle_t)pvParameters;
-    esp_err_t esp_ret;
-    // infinite loop like most tasks
-    for (;;) {
-        ESP_LOGI(TAG, "In the bus predictions task");
-        // perform get request
-        char *buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
-        esp_ret = perform_get_request(URL, buf);
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
-            free(buf);
-        }
-
-        // send request results to queue for processing
-        QueueData_t response_buffer;
-        response_buffer.buffer = buf;
-        response_buffer.response_type = e_bus_prediction;
-        if (xQueueSend(response_queue, &response_buffer, pdMS_TO_TICKS(100)) != pdPASS) {
-            // queue was full, free the response buffer
-            ESP_LOGE(TAG, "Processor queue full, dropping response");
-            free(buf);
-        }
-
-        // leave task
-        ESP_LOGI(TAG, "Leaving the bus predictions task...");
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "Bus prediction task high water mark %lu", watermark);
-        vTaskDelay(pdMS_TO_TICKS(10000));
+    char* time_to_arrival;
+    if (strcmp(isApp->valuestring, "0") != 0) {
+        // train is approaching
+        time_to_arrival = "DUE";
     }
-}
-
-/**
- Task that sends GET request for the CTA system time, sending response to queue in pvParameters
- * @param pvParameters: expects handle to a queue of QueueData_t items
- */
-void vGetCTATimeTask(void *pvParameters)
-{
-    // infinite loop like most tasks
-    char *URL = BUS_URL_ROOT "gettime?" BUS_URL_KEY "&unixTime=true" BUS_URL_FORMAT;
-    QueueHandle_t response_queue = (QueueHandle_t)pvParameters;
-    esp_err_t esp_ret;
-
-    for (;;) {
-        ESP_LOGI(TAG, "In the CTA time task");
-
-        // perform get request
-        char *buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
-        esp_ret = perform_get_request(URL, buf);
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
-            free(buf);
-        }
-        
-        // send request response to queue for processing
-        QueueData_t response;
-        response.buffer = buf;
-        response.response_type = e_cta_time;
-        if (xQueueSend(response_queue, &response, pdMS_TO_TICKS(100)) != pdPASS) {
-            ESP_LOGE(TAG, "Processing queue full, dropping response");
-            free(buf);
-        }
-        
-        // leave task
-        ESP_LOGI(TAG, "Leaving the CTA time task...");
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "CTA time prediction task high water mark %lu", watermark);
-        vTaskDelay(pdMS_TO_TICKS(30000));
+    else if (strcmp(isDly->valuestring, "0") != 0) {
+        // train is delayed
+        time_to_arrival = "DELAYED";
     }
-}
-
-void vGetTrainPredictionsTask(void *pvParameters)
-{
-    char *URL = TRAIN_URL_ROOT "ttarrivals.aspx?" TRAIN_URL_KEY
-                "&mapid=41490&max=5" TRAIN_URL_FORMAT;
-    QueueHandle_t response_queue = (QueueHandle_t)pvParameters;
-    esp_err_t esp_ret;
-
-    for (;;) {
-        ESP_LOGI(TAG, "In the train prediction task");
-
-        // perfrom get request
-        char *buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
-        esp_ret = perform_get_request(URL, buf);
-        if (esp_ret != ESP_OK) {
-            ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
-            free(buf);
-        }
-
-        // send request response to queue for processing
-        QueueData_t response;
-        response.buffer = buf;
-        response.response_type = e_train_prediction;
-        if (xQueueSend(response_queue, &response, pdMS_TO_TICKS(100)) != pdPASS) {
-            ESP_LOGE(TAG, "Processing queue full, dropping response");
-            free(buf);
-        }
-
-        // leave task
-        ESP_LOGI(TAG, "Leaving train prediction task");
-        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
-        ESP_LOGI(TAG, "Train prediction task high water mark: %lu", watermark);
-        vTaskDelay(10000);
+    else {
+        // train is in transit normally
+        time_to_arrival = arrT->valuestring;
     }
+
+    printf("Prediction: %s - %s\n", destNm->valuestring, time_to_arrival);
 }
 
 /**
@@ -273,7 +188,7 @@ void vParseAPIResponseTask(void *pvParameters)
                         ESP_LOGE(TAG, "Couldn't parse train prediction");
                     }
                     else {
-                        printf("Prediction: %s - %s\n", destNm->valuestring, arrT->valuestring);
+                        print_train_info(destNm, isApp, isDly, prdT, arrT);
                     }
                 }
             }
@@ -290,6 +205,57 @@ void vParseAPIResponseTask(void *pvParameters)
     }    
 }
 
+/**
+ * Task that performs get requests, sending the server response to the response queue for
+ * parsing
+ * @param pvParameters: Queue handle of the response queue
+ */
+void vPerformGetRequestTask(void *pvParameters)
+{
+    QueueHandle_t schedule_queue = (QueueHandle_t)pvParameters;
+    QueueHandle_t response_queue = xQueueCreate(3, sizeof(QueueData_t));
+    BaseType_t ret;
+    esp_err_t esp_ret;
+
+    xTaskCreate(vParseAPIResponseTask, "Parse API Response Task", 4096, (void *)response_queue, 4, NULL);
+
+    for (;;) {
+        // wait for a signal to start a get request
+        QueueData_t schedule;
+        ret = xQueueReceive(schedule_queue, &schedule, portMAX_DELAY);
+        if (ret != pdPASS) {
+            ESP_LOGE(TAG, "Couldn't receive data from queue (is it empty?)");
+        }
+
+        // perform get request
+        char *URL = schedule.buffer;
+        RequestType_t response_type = schedule.response_type;
+
+        char *response_buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
+        esp_ret = perform_get_request(URL, response_buf);
+        if (esp_ret != ESP_OK) {
+            ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
+            free(response_buf);
+        }
+
+        // send request results to queue for processing
+        QueueData_t response;
+        response.buffer = response_buf;
+        response.response_type = response_type;
+        if (xQueueSend(response_queue, &response, pdMS_TO_TICKS(100)) != pdPASS) {
+            // queue was full, free the response buffer
+            ESP_LOGE(TAG, "Processor queue full, dropping response");
+            free(response_buf);
+        }
+
+        // leave task
+        ESP_LOGI(TAG, "Leaving the GET request task...");
+        UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
+        ESP_LOGI(TAG, "GET request task high water mark %lu", watermark);
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+}
+
 void app_main(void)
 {
     esp_err_t esp_ret;
@@ -299,22 +265,33 @@ void app_main(void)
         ESP_LOGE(TAG, "Wi-Fi connection failed. Aborting.");
         abort();
     }
-    QueueHandle_t response_queue = xQueueCreate(3, sizeof(QueueData_t));
 
-    xTaskCreate(vParseAPIResponseTask, "Parse Response Task", 4096, (void *)response_queue, 4, NULL); // is that the right priority? idk consider
-    xTaskCreate(vGetCTATimeTask, "CTA Time Task", 4096, (void *)response_queue, 3, NULL);
-    vTaskDelay(pdMS_TO_TICKS(25000));
-    xTaskCreate(vGetBusPredictionsTask, "Bus Predictions Task", 4096, (void *)response_queue, 3, NULL);
-    vTaskDelay(pdMS_TO_TICKS(5000));
-    xTaskCreate(vGetTrainPredictionsTask, "Train Precitions Task", 4096, (void *)response_queue, 3, NULL);
-    
+    QueueHandle_t schedule_queue = xQueueCreate(3, sizeof(QueueData_t));
+
+    xTaskCreate(vPerformGetRequestTask, "Perform GET Request Task", 4096, (void *)schedule_queue, 3, NULL);
+
+    // this can be improved to be less repetitive
+    QueueData_t bus_msg;
+    bus_msg.buffer = BUS_URL;
+    bus_msg.response_type = e_bus_prediction;
+
+    QueueData_t train_msg;
+    train_msg.buffer = TRAIN_URL;
+    train_msg.response_type = e_train_prediction;
+
+    QueueData_t time_msg;
+    time_msg.buffer = TIME_URL;
+    time_msg.response_type = e_cta_time;
 
     for (;;) {
-        // Get current free heap
-        ESP_LOGD(TAG, "Free heap: %lu bytes\n", esp_get_free_heap_size());
-
-        // Get the lowest the heap has ever been since boot
-        ESP_LOGD(TAG, "Minimum free heap ever: %lu bytes\n", esp_get_minimum_free_heap_size());
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        // Buses
+        xQueueSend(schedule_queue, &bus_msg, pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(12000));
+        // Trains
+        xQueueSend(schedule_queue, &train_msg, pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(12000));
+        // Time
+        xQueueSend(schedule_queue, &time_msg, pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(6000));
     }
 }

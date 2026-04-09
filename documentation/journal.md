@@ -140,3 +140,39 @@ I added some (very basic) train API functionality. It's basically just performin
 I was also thinking... It may be better to delay the different tasks relative to each other rather than having the big offset at the beginning I currently have. Think about this more.
 
 Regardless, I think my task scheduling may be a little messed up. The train task doesn't seem to be executing as often as I intended. Look into this also.
+
+## Apr. 7, 2026
+
+I woke up a little bit ago and started working on this. I fixed the task scheduling issue I noted above (the train task said`vTaskDelay(10000)` instead of `vTaskDelay(pdMS_TO_TICKS(10000))`).
+
+I began formatting the train API responses a little bit by making the `print_train_info` helper function. Right now, the function outputs if a train is due or if there is a delay. I still need to figure out how to format the string predictions into a countdown. 
+
+Here are some solutions:
+
+- could I change the strings into unix time and compare them that way? this seems like easiest option
+  - can use strptime to convert the string to a tm struct, then use mktime to convert the tm struct to unix time
+- I could compare each part of the string to see what is different, but this seems overly complicated
+
+Here are some edge cases to think about:
+
+- what happens if current time is before midnight and next train comes after midnight
+- what happens if time difference is negative (I think this shouldn't happen, but I didn't read any guarantees of that in the API guide)
+
+## Apr. 8, 2026
+
+I was going to work on the stuff above, but I realized that I could simplify what I already have a little bit.
+
+I realized that right now I have three tasks that basically do the same thing because I was just coding and trying stuff as I went along. Instead of doing that, I think it may be simpler and more useful to have a generic get request task (`vPerformGetRequestTask`) and a separate request scheduler task (`vRequestSchedulerTask`. 
+
+`vRequestSchedulerTask` could send `RequestType_t`  variables to the `vPerformGetRequestTask` using a queue. Based on the request type, `vRequestSchedulerTask` can use different URLs to make the correct GET request.
+
+One more thought: how do you get the URL?
+
+- Could be handled by the `vPerformGetRequestTask`
+  - Would mean having some sort of if statement to decide the type of request received
+  - feels more messy
+- Could be handled by `vRequestSchedulerTask`
+  - Would pass the URL on the queue, can be done with existing QueueData_t struct
+
+I think I'll go with second option
+

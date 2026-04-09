@@ -21,11 +21,11 @@
 
 - [ ] Add train data to the ESP32 prototype
 
-  - [ ] perform a train get request
+  - [x] ~~perform a train get request~~ (done apr. 6)
   
   - [ ] format predictions into countdown
   
-  - [ ] Add delay/due functionality
+  - [x] ~~Add delay/due functionality~~ (done apr. 7)
   
 - [ ] Make GET request parameters into variables (rn they're hard-coded)
 
