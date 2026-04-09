@@ -87,20 +87,50 @@ esp_err_t connect_to_wifi(void) {
     return ESP_OK;
 }
 
+/**
+ * Prints train predictions to the console in minutes (or prints DUE/DELAYED if train is
+ * due or delayed)
+ * @param destNm cJSON* corresponding to the destNm output of API
+ * @param isApp cJSON* corresponding to the isApp output of API
+ * @param isDly cJSON* corresponding to the isDly output of API
+ * @param prdT cJSON* corresponding to the prdT output of API
+ * @param arrT cJSON* corresponding to the arrT output of API
+ */
 void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJSON *arrT)
 {
-    char* time_to_arrival;
+    char time_to_arrival[8];
     if (strcmp(isApp->valuestring, "0") != 0) {
         // train is approaching
-        time_to_arrival = "DUE";
+        snprintf(time_to_arrival, sizeof(time_to_arrival), "DUE");
     }
     else if (strcmp(isDly->valuestring, "0") != 0) {
         // train is delayed
-        time_to_arrival = "DELAYED";
+        snprintf(time_to_arrival, sizeof(time_to_arrival), "DELAYED");
     }
     else {
-        // train is in transit normally
-        time_to_arrival = arrT->valuestring;
+        // train will arrive, predict when (done by converting API output to unix time)
+        // and then comparing the unix time vaues with difftime
+        struct tm tm_arrT;
+        if (strptime(arrT->valuestring, "%Y-%m-%dT%T", &tm_arrT) == NULL) {
+            ESP_LOGE(TAG, "Couldn't change arrT to tm struct");
+        }
+        struct tm tm_prdT;
+        if (strptime(prdT->valuestring, "%Y-%m-%dT%T", &tm_prdT) == NULL) {
+            ESP_LOGE(TAG, "Couldn't change prdT to tm struct");
+        }
+
+        time_t unix_arrT;
+        time_t unix_prdT;
+        unix_arrT = mktime(&tm_arrT);
+        unix_prdT = mktime(&tm_prdT);
+        if ((unix_arrT == -1) || (unix_prdT == -1)) {
+            ESP_LOGE(TAG, "Couldn't change arrT or prdT to unix time");
+        }
+        int diff = difftime(unix_arrT, unix_prdT)/60;
+        if (diff < 0) {
+            ESP_LOGE(TAG, "Error, train prediction is negative (%.2f)", diff);
+        }
+        snprintf(time_to_arrival, sizeof(time_to_arrival), "%d", diff);
     }
 
     printf("Prediction: %s - %s\n", destNm->valuestring, time_to_arrival);

@@ -176,3 +176,14 @@ One more thought: how do you get the URL?
 
 I think I'll go with second option
 
+## Apr. 9, 2026
+
+Okay today I'm actually gonna work on the train formatting. Here is the output of the API:
+2026-04-09T07:32:07
+
+I need to turn this into unix time first and then compare the two values. Here's how to use [strptime()](https://pubs.opengroup.org/onlinepubs/007904875/functions/strptime.html).
+
+%Y-%m-%dT%T
+
+I did it! 
+
