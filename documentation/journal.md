@@ -187,3 +187,19 @@ I need to turn this into unix time first and then compare the two values. Here's
 
 I did it! 
 
+## Apr. 14, 2026
+
+All the parts finally arrived today, starting to assemble...
+
+I may have run into some issues with powering the matrix, but we will see
+
+## Apr. 15, 2026
+
+Today I used the matrix for the first time! Everything seems to work okay. There's a few pixels near the bottom right on one of the matrices that flicker a little bit, but I may need to do some more extensive testing to figure out what is going on with that. 
+
+Here's a picture:
+
+![Image of LED matrix](./images/15APR26.JPG)
+
+For next steps, I should get more familiar with the library and read about how it works:
+https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA

@@ -19,7 +19,7 @@ static const char *TAG = "transit-tracker";
 #define BUS_URL_ROOT    "https://www.ctabustracker.com/bustime/api/v3/"     // root of url
 #define BUS_URL_KEY     "key=" BUS_TRACKER_API_KEY  // api key
 #define BUS_URL_FORMAT  "&format=json"  // format of the response
-#define BUS_URL_ROUTES  "&rt=4,7,28"    // routes to get info about
+#define BUS_URL_ROUTES  "&rt=1,7,28"    // routes to get info about
 #define BUS_URL_STPID   "&stpid=1583,4884,74"   // stops to get info about
 #define BUS_URL_TOP     "&top=6"    // max number of predictions to receive
 #define BUS_URL         BUS_URL_ROOT "getpredictions?" BUS_URL_KEY BUS_URL_ROUTES BUS_URL_STPID \

@@ -19,11 +19,11 @@
 
   - [x] ~~Set up the parse task to handle different request types~~ (done Mar. 31)
 
-- [ ] Add train data to the ESP32 prototype
+- [x] ~~Add train data to the ESP32 prototype~~ (done apr. 9)
 
   - [x] ~~perform a train get request~~ (done apr. 6)
   
-  - [ ] format predictions into countdown
+  - [x] ~~format predictions into countdown~~ (done apr. 9)
   
   - [x] ~~Add delay/due functionality~~ (done apr. 7)
   
@@ -33,4 +33,10 @@
 
 - [ ] Have some sort of output when nothing is scheduled
 
+- [x] ~~Make sure the LED matrices work~~ (done apr. 15)
+
+- [ ] Read the matrix library documentation
+
+  
+  
   
