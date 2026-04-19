@@ -1,6 +1,12 @@
 #ifndef HTTPS_CLIENT_H
 #define HTTPS_CLIENT_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
+
 #include <sys/param.h>
 #include "esp_log.h"
 #include "esp_event.h"
@@ -11,5 +17,10 @@
 
 #define MAX_HTTP_OUTPUT_BUFFER 4095
 
-esp_err_t perform_get_request(char *request_url, char *output_buffer);
+esp_err_t perform_get_request(const char *request_url, char *output_buffer);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

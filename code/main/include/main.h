@@ -1,6 +1,21 @@
 #ifndef MAIN_H
 #define MAIN_H
 
+#include <stdio.h>
+#include <sys/time.h>
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "wifi_sta.h"
+#include "nvs_flash.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_crt_bundle.h"
+#include "https_client.h"
+#include "cJSON.h"
+#include "secrets.h"
+#include "hub75.h"
+#include <lvgl.h>
+
 /**
  * Request type, either a prediction request or a time request
  * predict_bus: a request for a prediction for a bus
@@ -22,5 +37,6 @@ typedef struct main
 {
     RequestType_t response_type;
     char* buffer;
+    const char* url;
 } QueueData_t;
 #endif

@@ -258,10 +258,10 @@ void vPerformGetRequestTask(void *pvParameters)
         }
 
         // perform get request
-        char *URL = schedule.buffer;
+        const char *URL = schedule.url;
         RequestType_t response_type = schedule.response_type;
 
-        char *response_buf = malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
+        char *response_buf = (char *)malloc(MAX_HTTP_OUTPUT_BUFFER + 1);
         esp_ret = perform_get_request(URL, response_buf);
         if (esp_ret != ESP_OK) {
             ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
@@ -286,7 +286,7 @@ void vPerformGetRequestTask(void *pvParameters)
     }
 }
 
-void app_main(void)
+extern "C" void app_main(void)
 {
     esp_err_t esp_ret;
     
@@ -302,15 +302,15 @@ void app_main(void)
 
     // this can be improved to be less repetitive
     QueueData_t bus_msg;
-    bus_msg.buffer = BUS_URL;
+    bus_msg.url = BUS_URL;
     bus_msg.response_type = e_bus_prediction;
 
     QueueData_t train_msg;
-    train_msg.buffer = TRAIN_URL;
+    train_msg.url = TRAIN_URL;
     train_msg.response_type = e_train_prediction;
 
     QueueData_t time_msg;
-    time_msg.buffer = TIME_URL;
+    time_msg.url = TIME_URL;
     time_msg.response_type = e_cta_time;
 
     for (;;) {

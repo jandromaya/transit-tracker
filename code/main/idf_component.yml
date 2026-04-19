@@ -1,0 +1,9 @@
+dependencies:
+  hub75:
+    git: https://github.com/esphome-libs/esp-hub75
+    path: components/hub75  # Important: point to the component subdirectory!
+  
+  lvgl/lvgl:
+    version: "^9.0.0"
+    rules:
+      - if: "idf_version >= 5.0"

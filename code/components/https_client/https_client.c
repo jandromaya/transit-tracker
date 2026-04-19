@@ -118,7 +118,7 @@ static esp_err_t https_with_url(void)
     return err;
 }
 
-esp_err_t perform_get_request(char *request_url, char *output_buffer)
+esp_err_t perform_get_request(const char *request_url, char *output_buffer)
 {
     esp_err_t esp_ret;
     URL = request_url;

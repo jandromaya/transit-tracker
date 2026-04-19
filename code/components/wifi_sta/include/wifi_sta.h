@@ -1,6 +1,11 @@
 #ifndef WIFI_STA_H
 #define WIFI_STA_H
 
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+
 #include "esp_err.h"
 
 /**
@@ -55,4 +60,9 @@ esp_err_t wifi_sta_reconnect(void);
  *  - false if any of the bits not set after waiting for seconds specified by timeout_sec
  */
 bool wait_for_wifi(EventGroupHandle_t wifi_event_group, int32_t timeout_sec);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif
