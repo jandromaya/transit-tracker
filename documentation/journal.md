@@ -128,6 +128,7 @@ Some thoughts:
   - Why do they use it?
     - Level shifting
     - Basically, the ESP32 is going to output at 3.3V, but the matrix needs input at 5V. This specific device helps bridge that gap
+  - UPDATE, it actually works ok even if you don't use these. More details on apr. 16
 
 ## apr. 6, 2026
 
@@ -203,3 +204,29 @@ Here's a picture:
 
 For next steps, I should get more familiar with the library and read about how it works:
 https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA
+
+## Apr. 16, 2026
+
+I'm starting to read some more about the library/matrices.
+
+I realized that the matrix worked well even without the AHCT245s for level shifting. Based on what I have read, this isn't really supposed to happen, but the ESP32 GPIO alone (which outputs at 3.3v, not the 5v expected by the matrix) could power all the red lights on the matrix without connecting the matrix itself to power. I will try using the AHCT245 to see if I notice a difference. 
+
+As far as the flickering issue I noted yesterday, it seems that the creator of the library I used to test recommends [connecting a capacitor on the panel's VCC and GND](https://github.com/mrcodetastic/ESP32-HUB75-MatrixPanel-DMA/issues/39#issuecomment-720780463) 
+
+Additionally, right now my ESP32 and the panel were connected to different grounds (the ESP32 connected to my computer, but the panel connected to wall power). That could also be the culprit of the flicker.
+
+## Apr. 17, 2026
+
+I found a different library that works with ESP-IDF. Here it is: https://github.com/esphome-libs/esp-hub75
+
+I decided to swtich because the other one just used arduino elements under the hood even within ESP IDF, and that just seemed a little inefficient. I began using some of the example documentation and it seems to work. I'll need to do some more testing tomorrow.
+
+Quick thing: draw.fill() seems to map to RBG instead of RGB on this matrix (I think I read something about it in the Adafruit documentation actually)
+
+## Apr. 18, 2026
+
+Today I did a lot of work figuring out how to use LVGL and the library I found yesterday to display stuff on the screen the way I want to. Here's what I have (it looks like it actually displays bus data, but that's just hard coded right now):
+
+![LED Matrix](./images/18APR26.JPG)
+
+The middle two rows scroll if they are too long, and I have set it up to update the text. Now I just need to combine this with the actual bus data stuff
