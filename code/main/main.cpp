@@ -1,15 +1,3 @@
-#include <stdio.h>
-#include <sys/time.h>
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "wifi_sta.h"
-#include "nvs_flash.h"
-#include "esp_netif.h"
-#include "esp_event.h"
-#include "esp_crt_bundle.h"
-#include "https_client.h"
-#include "cJSON.h"
-#include "secrets.h"
 #include "main.h"
 
 #define CONNECTION_TIMEOUT_SEC 10
@@ -19,9 +7,9 @@ static const char *TAG = "transit-tracker";
 #define BUS_URL_ROOT    "https://www.ctabustracker.com/bustime/api/v3/"     // root of url
 #define BUS_URL_KEY     "key=" BUS_TRACKER_API_KEY  // api key
 #define BUS_URL_FORMAT  "&format=json"  // format of the response
-#define BUS_URL_ROUTES  "&rt=1,7,28"    // routes to get info about
-#define BUS_URL_STPID   "&stpid=1583,4884,74"   // stops to get info about
-#define BUS_URL_TOP     "&top=6"    // max number of predictions to receive
+#define BUS_URL_ROUTES  "&rt=3,4,28,22"    // routes to get info about
+#define BUS_URL_STPID   "&stpid=1583,4884,74,1875"   // stops to get info about
+#define BUS_URL_TOP     "&top=3"    // max number of predictions to receive
 #define BUS_URL         BUS_URL_ROOT "getpredictions?" BUS_URL_KEY BUS_URL_ROUTES BUS_URL_STPID \
                         BUS_URL_TOP "&unixTime=true" BUS_URL_FORMAT
 
@@ -34,6 +22,84 @@ static const char *TAG = "transit-tracker";
                         TRAIN_URL_MAX TRAIN_URL_FORMAT
 
 #define TIME_URL BUS_URL_ROOT "gettime?" BUS_URL_KEY "&unixTime=true" BUS_URL_FORMAT
+
+// Global HUB75 driver instance (needed in flush callback)
+static Hub75Driver *g_driver = nullptr;
+
+// LVGL mutex for thread safety
+static SemaphoreHandle_t lvgl_mutex = nullptr;
+
+// Label array to update UI
+lv_obj_t** label_array;
+
+// Forward declaration
+extern "C" void lvgl_ui(lv_obj_t *scr, lv_obj_t **label_array);
+
+// LVGL mutex lock/unlock helpers
+static bool lvgl_lock(int timeout_ms) {
+  const TickType_t timeout_ticks = (timeout_ms < 0) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
+  return xSemaphoreTakeRecursive(lvgl_mutex, timeout_ticks) == pdTRUE;
+}
+
+static void lvgl_unlock() { xSemaphoreGiveRecursive(lvgl_mutex); }
+
+// LVGL display flush callback
+// Called by LVGL when a screen region needs updating
+static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
+  if (g_driver == nullptr) {
+    ESP_LOGE(TAG, "FLUSH: HUB75 driver is NULL!");
+    lv_display_flush_ready(disp);
+    return;
+  }
+
+  // Get area bounds and draw pixels
+  const uint16_t x = area->x1;
+  const uint16_t y = area->y1;
+  const uint16_t w = area->x2 - area->x1 + 1;
+  const uint16_t h = area->y2 - area->y1 + 1;
+
+  g_driver->draw_pixels(x, y, w, h, px_map, Hub75PixelFormat::RGB565);
+
+#ifdef CONFIG_HUB75_DOUBLE_BUFFER
+  g_driver->flip_buffer();
+#endif
+
+  lv_display_flush_ready(disp);
+}
+
+// LVGL timer task - calls lv_timer_handler() periodically
+static void lvgl_timer_task(void *arg) {
+  ESP_LOGI(TAG, "LVGL timer task started");
+
+  TickType_t last_wake_time = xTaskGetTickCount();
+
+  while (1) {
+    // Lock LVGL mutex
+    if (lvgl_lock(10)) {
+      // Calculate elapsed time and update LVGL tick (required for animations)
+      TickType_t current_time = xTaskGetTickCount();
+      uint32_t elapsed_ms = pdTICKS_TO_MS(current_time - last_wake_time);
+      last_wake_time = current_time;
+      lv_tick_inc(elapsed_ms);
+
+      // Handle LVGL timers and tasks (triggers redraws and animations)
+      uint32_t sleep_ms = lv_timer_handler();
+      lvgl_unlock();
+
+      // Ensure reasonable sleep bounds for smooth animations
+      if (sleep_ms > 100) {
+        sleep_ms = 100;  // Max 100ms for responsive animations
+      } else if (sleep_ms < 1) {
+        sleep_ms = 1;  // Min 1ms to prevent busy-wait
+      }
+
+      vTaskDelay(pdMS_TO_TICKS(sleep_ms));
+    } else {
+      ESP_LOGW(TAG, "Could not get LVGL lock");
+      vTaskDelay(pdMS_TO_TICKS(50));
+    }
+  }
+}
 
 esp_err_t connect_to_wifi(void) {
     esp_err_t esp_ret;
@@ -105,7 +171,7 @@ void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJ
     }
     else if (strcmp(isDly->valuestring, "0") != 0) {
         // train is delayed
-        snprintf(time_to_arrival, sizeof(time_to_arrival), "DELAYED");
+        snprintf(time_to_arrival, sizeof(time_to_arrival), "DLY");
     }
     else {
         // train will arrive, predict when (done by converting API output to unix time)
@@ -171,6 +237,7 @@ void vParseAPIResponseTask(void *pvParameters)
 
                 // Since predictions come in an array, must iterate through each prediction
                 // in predictions
+                int i = 0;
                 cJSON_ArrayForEach(prediction, predictions) {
                     cJSON *rt = cJSON_GetObjectItemCaseSensitive(prediction, "rtdd");
                     cJSON *prdctdn = cJSON_GetObjectItemCaseSensitive(prediction, "prdctdn");
@@ -179,6 +246,18 @@ void vParseAPIResponseTask(void *pvParameters)
                         ESP_LOGE(TAG, "Couldn't parse bus prediction");
                     }
                     else {
+                        // TODO: MAKE THIS CLEANER/COMPATIBLE WITH MORE RESPONSES
+                        if (i + 2 < 9){
+                            if (lvgl_lock(portMAX_DELAY)) {
+                                lv_label_set_text(label_array[i], rt->valuestring);
+                                lv_label_set_text(label_array[i+1], stpnm->valuestring);
+                                lv_label_set_text(label_array[i+2], prdctdn->valuestring);
+                                lvgl_unlock();
+                                i += 3;
+                            } else {
+                            ESP_LOGW(TAG, "Skipped label update bc lock failed");
+                        }
+                        } 
                         printf("Prediction: %s - %s, %s\n", rt->valuestring, stpnm->valuestring, prdctdn->valuestring);
                     }
                 }
@@ -266,6 +345,7 @@ void vPerformGetRequestTask(void *pvParameters)
         if (esp_ret != ESP_OK) {
             ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
             free(response_buf);
+            continue;
         }
 
         // send request results to queue for processing
@@ -276,6 +356,7 @@ void vPerformGetRequestTask(void *pvParameters)
             // queue was full, free the response buffer
             ESP_LOGE(TAG, "Processor queue full, dropping response");
             free(response_buf);
+            continue;
         }
 
         // leave task
@@ -289,6 +370,9 @@ void vPerformGetRequestTask(void *pvParameters)
 extern "C" void app_main(void)
 {
     esp_err_t esp_ret;
+    BaseType_t rtos_ret;
+
+    ESP_LOGI(TAG, "Transit tracker starting...");
     
     esp_ret = connect_to_wifi();
     if (esp_ret != ESP_OK) {
@@ -296,9 +380,109 @@ extern "C" void app_main(void)
         abort();
     }
 
+    // Load configuration from menuconfig
+  Hub75Config config = getMenuConfigSettings();
+
+  ESP_LOGI(TAG, "Configuration:");
+  ESP_LOGI(TAG, "  Panel: %dx%d pixels", config.panel_width, config.panel_height);
+  ESP_LOGI(TAG, "  Double buffering: %s", config.double_buffer ? "ENABLED" : "DISABLED");
+
+  // Create and initialize HUB75 driver
+  static Hub75Driver driver(config);  // Static to persist
+  g_driver = &driver;
+
+  if (!driver.begin()) {
+    ESP_LOGE(TAG, "Failed to initialize HUB75 driver!");
+    return;
+  }
+
+  ESP_LOGI(TAG, "HUB75 driver initialized");
+  ESP_LOGI(TAG, "  Display: %ux%u pixels", driver.get_width(), driver.get_height());
+  ESP_LOGI(TAG, "  Clock: %lu Hz, Bit depth: %u, Refresh: %u Hz", (unsigned long) config.output_clock_speed,
+           HUB75_BIT_DEPTH, config.min_refresh_rate);
+  ESP_LOGI(TAG, "  Pins - R1=%d G1=%d B1=%d R2=%d G2=%d B2=%d", config.pins.r1, config.pins.g1, config.pins.b1,
+           config.pins.r2, config.pins.g2, config.pins.b2);
+  ESP_LOGI(TAG, "  Pins - A=%d B=%d C=%d D=%d E=%d CLK=%d LAT=%d OE=%d", config.pins.a, config.pins.b, config.pins.c,
+           config.pins.d, config.pins.e, config.pins.clk, config.pins.lat, config.pins.oe);
+
+  // Quick hardware test - RGB color bars
+  driver.clear();
+  ESP_LOGI(TAG, "Drawing RGB test pattern...");
+  const uint16_t bar_width = driver.get_width() / 3;
+  for (uint16_t y = 0; y < driver.get_height(); y++) {
+    for (uint16_t x = 0; x < driver.get_width(); x++) {
+      if (x < bar_width) {
+        driver.set_pixel(x, y, 255, 0, 0);  // Red
+      } else if (x < bar_width * 2) {
+        driver.set_pixel(x, y, 0, 0, 255);  // Green
+      } else {
+        driver.set_pixel(x, y, 0, 255, 0);  // Blue
+      }
+    }
+  }
+  vTaskDelay(pdMS_TO_TICKS(1000));
+  driver.clear();
+
+  // Initialize LVGL
+  ESP_LOGI(TAG, "Initializing LVGL...");
+
+  lvgl_mutex = xSemaphoreCreateRecursiveMutex();
+  if (lvgl_mutex == nullptr) {
+    ESP_LOGE(TAG, "Failed to create LVGL mutex!");
+    return;
+  }
+
+  lv_init();
+
+  lv_display_t *disp = lv_display_create(driver.get_width(), driver.get_height());
+  if (disp == nullptr) {
+    ESP_LOGE(TAG, "Failed to create LVGL display!");
+    return;
+  }
+
+  // Set color format and create draw buffer (LVGL manages memory)
+  lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+  lv_draw_buf_t *draw_buf = lv_draw_buf_create(driver.get_width(), driver.get_height(), LV_COLOR_FORMAT_RGB565, 0);
+  if (draw_buf == nullptr) {
+    ESP_LOGE(TAG, "Failed to create LVGL draw buffer!");
+    return;
+  }
+  lv_display_set_draw_buffers(disp, draw_buf, nullptr);
+  lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_PARTIAL);
+  lv_display_set_flush_cb(disp, lvgl_flush_cb);
+
+  ESP_LOGI(TAG, "LVGL initialized");
+
+  label_array = (lv_obj_t **)malloc(9 * sizeof(lv_obj_t*));
+  lv_obj_t *scr;
+
+  // Create demo UI
+  ESP_LOGI(TAG, "Creating demo UI...");
+  if (lvgl_lock(0)) {
+    scr = lv_display_get_screen_active(disp);
+    lvgl_ui(scr, label_array);
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(disp);
+    lvgl_unlock();
+  } else {
+    ESP_LOGE(TAG, "Could not lock LVGL for UI creation!");
+  }
+
     QueueHandle_t schedule_queue = xQueueCreate(3, sizeof(QueueData_t));
 
-    xTaskCreate(vPerformGetRequestTask, "Perform GET Request Task", 4096, (void *)schedule_queue, 3, NULL);
+    rtos_ret = xTaskCreate(vPerformGetRequestTask, "Perform GET Request Task", 4096, (void *)schedule_queue, 3, NULL);
+    if (rtos_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create GET request task!");
+        return;
+    }
+
+    rtos_ret = xTaskCreate(lvgl_timer_task, "lvgl timer task", 4096, NULL, 4, NULL);
+    if (rtos_ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LVGL timer task!");
+        return;
+    }
+
+    ESP_LOGI(TAG, "LVGL running, demo UI displayed");
 
     // this can be improved to be less repetitive
     QueueData_t bus_msg;

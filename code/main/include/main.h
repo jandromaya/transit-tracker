@@ -15,6 +15,7 @@
 #include "secrets.h"
 #include "hub75.h"
 #include <lvgl.h>
+#include "board_config.h"
 
 /**
  * Request type, either a prediction request or a time request
