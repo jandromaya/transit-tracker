@@ -15,7 +15,7 @@ extern "C"
 #include "freertos/FreeRTOS.h"
 #include "esp_http_client.h"
 
-#define MAX_HTTP_OUTPUT_BUFFER 4095
+#define MAX_HTTP_OUTPUT_BUFFER 8191
 
 esp_err_t perform_get_request(const char *request_url, char *output_buffer);
 

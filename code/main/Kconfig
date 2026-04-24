@@ -1,0 +1,50 @@
+menu "Transit Tracker Configuration"
+
+    config WIFI_STA_CONNECT
+        bool "Connect using WiFi"
+        default n
+        help
+            Enables the WiFi driver to connect to your local network
+
+    config TRACKER_BUSES_ENABLED
+        bool "Enable bus tracking"
+        default y
+        help
+            Enables the transit tracker application to track buses
+
+    config TRACKER_TRAINS_ENABLED
+        bool "Enable train tracking"
+        default y
+        help
+            Enables the transit tracker application to track trains
+
+    config TRACKER_TIME_ENABLED
+        bool "Enable time display"
+        default y
+        help
+            Enables the train tracker application to display time
+
+    if TRACKER_BUSES_ENABLED
+        config TRACKER_BUS_ROUTES
+            string "Bus routes to track"
+            default "1,7,28"
+            help
+                Enter the bus routes you want to track, separated with commas and no
+                spaces. Like this: "route1,route2,route3..."
+
+        config TRACKER_BUS_STPIDS
+            string "Bus stop IDs to track"
+            default "1583,4884,74,1875"
+            help
+                Enter the bus stop IDs you want to track, separated with commas and no
+                spaces. Like this: "stpid1,stpid2,stpid3..."
+
+        config TRACKER_BUS_TOP
+            int "Max number of bus predictions to receive"
+            default 3
+            help
+                Enter the maximum number of predictions the transit app should receive
+                from the CTA servers. Enter no whitespace or other characters.
+    endif
+
+endmenu

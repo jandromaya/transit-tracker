@@ -61,7 +61,7 @@ static lv_obj_t* create_static_label(lv_obj_t *parent, const char *text, int16_t
 }
 
 // Main UI creation function
-void lvgl_ui(lv_obj_t *scr, lv_obj_t** label_array) {
+void lvgl_ui(lv_obj_t *scr, lv_obj_t** label_array, int num) {
   // Set background color to black
   lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
 
@@ -74,17 +74,19 @@ void lvgl_ui(lv_obj_t *scr, lv_obj_t** label_array) {
   int16_t scr_height = lv_obj_get_height(scr);
 
   ESP_LOGI(TAG, "Creating UI for %dx%d display", scr_width, scr_height);
+  char curr_screen[2];
+  snprintf(curr_screen, 2, "%d", num);
 
   // Title: Scrolling text
-  label_array[0] = create_static_label(scr, "7", 0, 0, false);
-  label_array[1] = create_scrolling_label(scr, "Congress Plaza & Michigan", 0, 10000);
-  label_array[2] = create_static_label(scr, "DUE", 0, 0, true);
-  label_array[3] = create_static_label(scr, "126", 0, 10, false);
-  label_array[4] = create_scrolling_label(scr, "Congress Plaza & Michigan", 10, 10000);
-  label_array[5] = create_static_label(scr, "DLY", 0, 10, true);
-  label_array[6] = create_static_label(scr, "J14", 0, 20, false);
-  label_array[7] = create_scrolling_label(scr, "Congress Plaza & Michigan", 20, 10000);
-  label_array[8] = create_static_label(scr, "25", 0, 20, true);
+  label_array[0] = create_static_label(scr, "", 0, 0, false);
+  label_array[1] = create_scrolling_label(scr, "", 0, 10000);
+  label_array[2] = create_static_label(scr, "", 0, 0, true);
+  label_array[3] = create_static_label(scr, "", 0, 10, false);
+  label_array[4] = create_scrolling_label(scr, "", 10, 10000);
+  label_array[5] = create_static_label(scr, "", 0, 10, true);
+  label_array[6] = create_static_label(scr, "", 0, 20, false);
+  label_array[7] = create_scrolling_label(scr, "", 20, 10000);
+  label_array[8] = create_static_label(scr, "", 0, 20, true);
 
   ESP_LOGI(TAG, "Demo UI created");
 }

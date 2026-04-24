@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "wifi_sta.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
@@ -34,10 +35,20 @@ typedef enum
  * Struct for API response buffers. Contains the type of the request (RequestType_t) and
  * a pointer to the buffer.
  */
-typedef struct main
+typedef struct QueueData
 {
     RequestType_t response_type;
     char* buffer;
     const char* url;
 } QueueData_t;
+
+/**
+ * Struct for LVGL screens. screen is a pointer to the lv_obj_t screen object, and
+ * label_array is an array for all the labesl in the screen. It should contain 9 labels.
+ */
+typedef struct Screen
+{
+    lv_obj_t* screen;
+    lv_obj_t** label_array;
+} Screen_t;
 #endif

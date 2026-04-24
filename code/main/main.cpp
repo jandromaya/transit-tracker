@@ -1,27 +1,46 @@
 #include "main.h"
 
-#define CONNECTION_TIMEOUT_SEC 10
+/**************************************************************************************
+ * MACRO DEFINITIONS
+ */
+// defining function macros
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
 
-static const char *TAG = "transit-tracker";
+#define CEIL(x,y) (((x) + (y) - 1)/(y))
 
-#define BUS_URL_ROOT    "https://www.ctabustracker.com/bustime/api/v3/"     // root of url
-#define BUS_URL_KEY     "key=" BUS_TRACKER_API_KEY  // api key
-#define BUS_URL_FORMAT  "&format=json"  // format of the response
-#define BUS_URL_ROUTES  "&rt=3,4,28,22"    // routes to get info about
-#define BUS_URL_STPID   "&stpid=1583,4884,74,1875"   // stops to get info about
-#define BUS_URL_TOP     "&top=3"    // max number of predictions to receive
-#define BUS_URL         BUS_URL_ROOT "getpredictions?" BUS_URL_KEY BUS_URL_ROUTES BUS_URL_STPID \
-                        BUS_URL_TOP "&unixTime=true" BUS_URL_FORMAT
+// building  bus URL for API calls
+#define BUS_URL_ROOT        "https://www.ctabustracker.com/bustime/api/v3/"     // root of url
+#define BUS_URL_KEY         "key=" BUS_TRACKER_API_KEY  // api key
+#define BUS_URL_FORMAT      "&format=json"  // format of the response
+#define BUS_URL_ROUTES      "&rt=" CONFIG_TRACKER_BUS_ROUTES    // routes to get info about
+#define BUS_URL_STPID       "&stpid="  CONFIG_TRACKER_BUS_STPIDS  // stops to get info about
+#define BUS_URL_TOP         "&top="   STR(CONFIG_TRACKER_BUS_TOP) // max number of predictions to receive
+#define BUS_URL             BUS_URL_ROOT "getpredictions?" BUS_URL_KEY BUS_URL_ROUTES BUS_URL_STPID \
+                            BUS_URL_TOP "&unixTime=true" BUS_URL_FORMAT
 
-#define TRAIN_URL_ROOT "http://lapi.transitchicago.com/api/1.0/"    // root of url
-#define TRAIN_URL_KEY "key=" TRAIN_TRACKER_API_KEY  // api key
-#define TRAIN_URL_FORMAT "&outputType=JSON" // format of the response
+// building train URL for API calls
+#define TRAIN_URL_ROOT      "http://lapi.transitchicago.com/api/1.0/"    // root of url
+#define TRAIN_URL_KEY       "key=" TRAIN_TRACKER_API_KEY  // api key
+#define TRAIN_URL_FORMAT    "&outputType=JSON" // format of the response
 #define TRAIN_URL_MAPID     "&mapid=41490"  // station to get info about
 #define TRAIN_URL_MAX       "&max=5"    // max number of predictions to receive
-#define TRAIN_URL       TRAIN_URL_ROOT "ttarrivals.aspx?" TRAIN_URL_KEY TRAIN_URL_MAPID \
-                        TRAIN_URL_MAX TRAIN_URL_FORMAT
+#define TRAIN_URL           TRAIN_URL_ROOT "ttarrivals.aspx?" TRAIN_URL_KEY TRAIN_URL_MAPID \
+                            TRAIN_URL_MAX TRAIN_URL_FORMAT
 
 #define TIME_URL BUS_URL_ROOT "gettime?" BUS_URL_KEY "&unixTime=true" BUS_URL_FORMAT
+
+// defining helpful compile-time constants
+#define CONNECTION_TIMEOUT_SEC  10
+#define ROWS_PER_SCREEN         3   
+#define NUM_SCREENS             CEIL(CONFIG_TRACKER_BUS_TOP, ROWS_PER_SCREEN)
+#define BUS_PREDICTION_BIT      BIT0
+#define TRAIN_PREDICTION_BIT    BIT1
+
+/**************************************************************************************
+ * GLOBALS DEFINITIONS
+ */
+static const char *TAG = "transit-tracker";
 
 // Global HUB75 driver instance (needed in flush callback)
 static Hub75Driver *g_driver = nullptr;
@@ -29,11 +48,18 @@ static Hub75Driver *g_driver = nullptr;
 // LVGL mutex for thread safety
 static SemaphoreHandle_t lvgl_mutex = nullptr;
 
-// Label array to update UI
-lv_obj_t** label_array;
+// Screen constants
+Screen_t *screen_array[NUM_SCREENS];
 
+uint16_t curr_num_predictions = 0;
+
+EventGroupHandle_t prediction_event_group;
+
+/**************************************************************************************
+ * FUNCTION DEFINITIONS
+ */
 // Forward declaration
-extern "C" void lvgl_ui(lv_obj_t *scr, lv_obj_t **label_array);
+extern "C" void lvgl_ui(lv_obj_t *scr, lv_obj_t **label_array, int num);
 
 // LVGL mutex lock/unlock helpers
 static bool lvgl_lock(int timeout_ms) {
@@ -203,7 +229,7 @@ void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJ
 }
 
 /**
- * Task that parses JSON data from queue passed into pvParameters. Rigt now, it only parses
+ * Task that parses JSON data from queue passed into pvParameters. Right now, it only parses
  * prediciton requests.
  * @param pvParameters: expects handle to a queue of char* buffers
  */
@@ -237,7 +263,8 @@ void vParseAPIResponseTask(void *pvParameters)
 
                 // Since predictions come in an array, must iterate through each prediction
                 // in predictions
-                int i = 0;
+                uint32_t prediction_count = 0;
+                int screen_idx = 0;
                 cJSON_ArrayForEach(prediction, predictions) {
                     cJSON *rt = cJSON_GetObjectItemCaseSensitive(prediction, "rtdd");
                     cJSON *prdctdn = cJSON_GetObjectItemCaseSensitive(prediction, "prdctdn");
@@ -246,21 +273,33 @@ void vParseAPIResponseTask(void *pvParameters)
                         ESP_LOGE(TAG, "Couldn't parse bus prediction");
                     }
                     else {
-                        // TODO: MAKE THIS CLEANER/COMPATIBLE WITH MORE RESPONSES
-                        if (i + 2 < 9){
+                        // current screen to update
+                        Screen_t *curr_screen = screen_array[screen_idx];
+                        // label_idx basically just says what row we are currently updating (something seems broken here)
+                        int label_idx = (prediction_count % ROWS_PER_SCREEN)* 3;
+                        if (label_idx + 2 < 9){
                             if (lvgl_lock(portMAX_DELAY)) {
-                                lv_label_set_text(label_array[i], rt->valuestring);
-                                lv_label_set_text(label_array[i+1], stpnm->valuestring);
-                                lv_label_set_text(label_array[i+2], prdctdn->valuestring);
+                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx, screen_idx, rt->valuestring);
+                                lv_label_set_text(curr_screen->label_array[label_idx], rt->valuestring);
+                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx+1, screen_idx, stpnm->valuestring);
+                                lv_label_set_text(curr_screen->label_array[label_idx+1], stpnm->valuestring);
+                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx+2, screen_idx, prdctdn->valuestring);
+                                lv_label_set_text(curr_screen->label_array[label_idx+2], prdctdn->valuestring);
                                 lvgl_unlock();
-                                i += 3;
                             } else {
-                            ESP_LOGW(TAG, "Skipped label update bc lock failed");
-                        }
+                                ESP_LOGW(TAG, "Skipped label update bc lock failed");
+                            }
                         } 
                         printf("Prediction: %s - %s, %s\n", rt->valuestring, stpnm->valuestring, prdctdn->valuestring);
                     }
+
+                    prediction_count++;
+                    if (prediction_count % ROWS_PER_SCREEN == 0)
+                        screen_idx++;
                 }
+
+                curr_num_predictions = prediction_count;
+                xEventGroupSetBits(prediction_event_group, BUS_PREDICTION_BIT);
             }
             else if (queue_data.response_type == e_cta_time) {
                 // getting CTA system time from JSON response
@@ -371,6 +410,7 @@ extern "C" void app_main(void)
 {
     esp_err_t esp_ret;
     BaseType_t rtos_ret;
+    prediction_event_group = xEventGroupCreate();
 
     ESP_LOGI(TAG, "Transit tracker starting...");
     
@@ -453,16 +493,20 @@ extern "C" void app_main(void)
 
   ESP_LOGI(TAG, "LVGL initialized");
 
-  label_array = (lv_obj_t **)malloc(9 * sizeof(lv_obj_t*));
-  lv_obj_t *scr;
-
-  // Create demo UI
-  ESP_LOGI(TAG, "Creating demo UI...");
+  // Creating screens
+  ESP_LOGI(TAG, "Creating screens");
   if (lvgl_lock(0)) {
-    scr = lv_display_get_screen_active(disp);
-    lvgl_ui(scr, label_array);
-    lv_obj_invalidate(lv_screen_active());
-    lv_refr_now(disp);
+    for (int i = 0; i < NUM_SCREENS; i++) {     // initialize each screen
+        lv_obj_t *scr = lv_obj_create(NULL);
+        lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * 9);
+        Screen_t *screen = (Screen_t *)malloc(sizeof(Screen_t));
+        screen->screen = scr;
+        screen->label_array = label_array;
+        screen_array[i] = screen;
+        lvgl_ui(screen->screen, screen->label_array, i);
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(disp);
+    } 
     lvgl_unlock();
   } else {
     ESP_LOGE(TAG, "Could not lock LVGL for UI creation!");
@@ -496,16 +540,36 @@ extern "C" void app_main(void)
     QueueData_t time_msg;
     time_msg.url = TIME_URL;
     time_msg.response_type = e_cta_time;
+    
+    lv_screen_load(screen_array[0]->screen);
 
     for (;;) {
-        // Buses
+        // send message to schedule queue to awaken GET request task
         xQueueSend(schedule_queue, &bus_msg, pdMS_TO_TICKS(100));
-        vTaskDelay(pdMS_TO_TICKS(12000));
-        // Trains
-        xQueueSend(schedule_queue, &train_msg, pdMS_TO_TICKS(100));
-        vTaskDelay(pdMS_TO_TICKS(12000));
-        // Time
-        xQueueSend(schedule_queue, &time_msg, pdMS_TO_TICKS(100));
-        vTaskDelay(pdMS_TO_TICKS(6000));
+
+        // wait until the GET response is parsed
+        EventBits_t event_ret = xEventGroupWaitBits(prediction_event_group,
+                            BUS_PREDICTION_BIT | TRAIN_PREDICTION_BIT,
+                            pdTRUE,
+                            pdFALSE,
+                            pdMS_TO_TICKS(1000));
+        if ((event_ret & (BUS_PREDICTION_BIT | TRAIN_PREDICTION_BIT)) == 0) {
+            ESP_LOGE(TAG, "Parse task needs more time...");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        
+        // Figure out how many screens are needed to display all the data
+        uint16_t screens_needed = CEIL(curr_num_predictions, ROWS_PER_SCREEN);
+        ESP_LOGI(TAG, "received %d predictions; need %d screens", curr_num_predictions, screens_needed);
+        
+        // switch active display periodically to show all screens needed in 15 seconds
+        for (int i = 0; i < screens_needed; i++) {
+            if (lvgl_lock(portMAX_DELAY)) {
+                lv_screen_load(screen_array[i]->screen);
+                lvgl_unlock();
+            }
+            
+            vTaskDelay(pdMS_TO_TICKS(15000 / screens_needed));
+        }
     }
 }

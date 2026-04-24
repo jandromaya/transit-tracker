@@ -230,3 +230,81 @@ Today I did a lot of work figuring out how to use LVGL and the library I found y
 ![LED Matrix](./images/18APR26.JPG)
 
 The middle two rows scroll if they are too long, and I have set it up to update the text. Now I just need to combine this with the actual bus data stuff
+
+## Apr. 19, 2026
+
+Today I got the matrix to print real bus data! Right now it's kind of in a prototype state, as it only prints 3 buses out and nothing else. From here, I need to make it print more bus data and probably clean up the code a little bit.
+
+## Apr. 20, 2026
+
+Re: more bus data and cleaning up the code
+
+I think it may be useful at this point to set up a Kconfig file for settings related to the bus URL (max num buses wanted, routes, etc). Later on, I want to make this info controllable with a website, but I think it will be good for now to set up the Kconfig file
+
+How do I add support for more output?
+
+- Right now, it just outputs 3 bus routes, but I want to output more bus routes and also potentially output train routes/the current time
+- I have come up with two ides for how I could implement this with LVGL:
+  - Scroll method - everything is one LVGL screen, and whenever I want something to show, I just scroll to it
+    - Pros
+      - Less screens to deal with
+      - Could mix train and bus info if that is desired
+      - Could show less blank lines potentially (I can just scroll in such a way that there are no blank lines)
+    - Cons
+      - Unsure how I would implement the time display
+      - The look is less deterministic (will depend on how many items are on screen)
+  - Active screen method - There are mutliple screens for buses and multiple screens for trains, and I just switch between them to output different content
+    - Pros
+      - More uniform look
+      - Can just implement the time display as a separate screen
+      - Seems like how you're probably meant to use LVGL tbh
+    - Cons
+      - Feels harder to implement (if i receive less data than the max, how do I make sure no blank/outdated screens display?)
+      - How do I figure out how many screens to display?
+
+I'll try the second method. Here's what I think I need to do:
+
+1. Set up a screen array of size `ceil(CONFIG_TRACKER_BUS_TOP/3) + ceil(CONFIG_TRACKER_TRAIN_MAX/3)`
+   1. This is the max number of screens I would need
+   2. Can add an extra screen if I want to display the time
+   3. I may want to set a maximum number of total screens (which would mean a max number of top/max). This could be determined by memory constraints
+2. For each screen, I'm going to want labels
+   1. One for each position on the screen (9 for trains/buses, just 1 for the time)
+   2. I could do this in a struct, so the screen array would be an array of structs, inside the struct would be the `lv_obj_t` for the screen and and the `lv_obj_t` array for the labels 
+3. in the main task
+   1. I send messages to the bus, train, and time queues to send GET requests
+   2. The Parse task should populate the labels/screen/struct or whatever and tell the main task how many predictions it parsed
+      1. This is probably best done with a queue
+      2. It should also zero out any extra space in screens
+   3. Once the main task knows how many predictions were parsed, the main task can switch between the appropriate amount of screens
+      1. the number of screens is just equal to `ceil(parsed_tasks/3)`
+      2. how often should it switch?
+         1. This could be set by the user in Kconfig or
+         2. it could be decided based on 30 second intervals: we have 24 seconds for bus/train times (12 for bus, 12 for trains). If there are 4 train screens to switch through, then each gets 3 seconds, etc
+4. I would need to initialize all this also
+   1. I think I can do this in the lv_ui function
+
+## Apr. 23 2026
+
+Today I made some good progress on this. I basically got up to step 3 above. For tomorrow:
+
+figure out a good way to let hte main task know how many predictions were parsed and to then sync. I was trying to use task notifications, but I think I may just have to use an event group and a global variable
+
+## Apr. 24, 2026
+
+Lots of progress today. It now prints out several screens of bus predictions. To implement it, I ended up using an event group and a global variable like I said above. 
+
+From here, some to-dos:
+
+- clear old predictions from active screens
+  - For example, if I get one API response with 6 predictions, that fills up two screens completely. Later on, if I get an API response with just 5 predictions, that SHOULD have screen 1 with 3 predictions and screen 2 with 2 predictions, but currently, I don't clear old predictions, so screen 2 shows the 2 new predictions but it will still display the old prediction at the bottom
+  - using the num_predictions variable, I can determine which rows need to be cleared on the display
+    - max_predictions - num_predictions = rows_to_clear
+    - where max_predictions = num_screens * ROWS_PER_SCREEN
+    - and rows_to_clear tells me how many rows to clear on the last screen (should just be 1 or 2 rows)
+    - this could be done in the main task or the parsing task. right now leaning to doing it in main task to limit parsing task's job to just parsing, not displaying
+- eventgroup solution is currently a little janky
+  - sometimes the time out doesn't leave enough time for the parse task to complete and set the event group bits
+  - I could just set a longer time out
+  - but the truth is that the main task is calling eventgroupwait() right when the GET request task runs, so there needs to be enough time for both the request task and the parse task to run or the main task should wait until BOTH the request task and the parse task finish (which could just be implemented using the current event group lol)
+- need to update function comments because some things have changed
