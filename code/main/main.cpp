@@ -32,10 +32,12 @@
 
 // defining helpful compile-time constants
 #define CONNECTION_TIMEOUT_SEC  10
-#define ROWS_PER_SCREEN         3   
+#define ROWS_PER_SCREEN         3
+#define COLS_PER_ROW            3
 #define NUM_SCREENS             CEIL(CONFIG_TRACKER_BUS_TOP, ROWS_PER_SCREEN)
 #define BUS_PREDICTION_BIT      BIT0
 #define TRAIN_PREDICTION_BIT    BIT1
+#define GET_SUCCESS_BIT         BIT3
 
 /**************************************************************************************
  * GLOBALS DEFINITIONS
@@ -179,6 +181,8 @@ esp_err_t connect_to_wifi(void) {
     return ESP_OK;
 }
 
+// TODO: MAKE THIS UPDATE LABELS FOR TRAINS. TO DO SO, I'LL NEED A NEW ROUTE PARAMETER
+// SO IT CAN WRITE THE ROUTE ON THE SCREEN.
 /**
  * Prints train predictions to the console in minutes (or prints DUE/DELAYED if train is
  * due or delayed)
@@ -277,7 +281,7 @@ void vParseAPIResponseTask(void *pvParameters)
                         Screen_t *curr_screen = screen_array[screen_idx];
                         // label_idx basically just says what row we are currently updating (something seems broken here)
                         int label_idx = (prediction_count % ROWS_PER_SCREEN)* 3;
-                        if (label_idx + 2 < 9){
+                        if (label_idx + 2 < ROWS_PER_SCREEN * COLS_PER_ROW){
                             if (lvgl_lock(portMAX_DELAY)) {
                                 ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx, screen_idx, rt->valuestring);
                                 lv_label_set_text(curr_screen->label_array[label_idx], rt->valuestring);
@@ -402,7 +406,7 @@ void vPerformGetRequestTask(void *pvParameters)
         ESP_LOGI(TAG, "Leaving the GET request task...");
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         ESP_LOGI(TAG, "GET request task high water mark %lu", watermark);
-        vTaskDelay(pdMS_TO_TICKS(10000));
+        xEventGroupSetBits(prediction_event_group, GET_SUCCESS_BIT);
     }
 }
 
@@ -498,7 +502,7 @@ extern "C" void app_main(void)
   if (lvgl_lock(0)) {
     for (int i = 0; i < NUM_SCREENS; i++) {     // initialize each screen
         lv_obj_t *scr = lv_obj_create(NULL);
-        lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * 9);
+        lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * ROWS_PER_SCREEN * COLS_PER_ROW);
         Screen_t *screen = (Screen_t *)malloc(sizeof(Screen_t));
         screen->screen = scr;
         screen->label_array = label_array;
@@ -549,18 +553,40 @@ extern "C" void app_main(void)
 
         // wait until the GET response is parsed
         EventBits_t event_ret = xEventGroupWaitBits(prediction_event_group,
-                            BUS_PREDICTION_BIT | TRAIN_PREDICTION_BIT,
+                            BUS_PREDICTION_BIT | GET_SUCCESS_BIT,
                             pdTRUE,
-                            pdFALSE,
-                            pdMS_TO_TICKS(1000));
-        if ((event_ret & (BUS_PREDICTION_BIT | TRAIN_PREDICTION_BIT)) == 0) {
-            ESP_LOGE(TAG, "Parse task needs more time...");
-            vTaskDelay(pdMS_TO_TICKS(1000));
+                            pdTRUE,
+                            pdMS_TO_TICKS(5000));
+        if ((event_ret & GET_SUCCESS_BIT) == 0) {
+            ESP_LOGE(TAG, "Still waiting on GET request...");
+            event_ret = xEventGroupWaitBits(prediction_event_group,
+                                            BUS_PREDICTION_BIT | GET_SUCCESS_BIT,
+                                            pdTRUE,
+                                            pdTRUE,
+                                            pdMS_TO_TICKS(5000));
+            // TODO: DEAL WITH THIS MORE GRACEFULLY
+            if ((event_ret & GET_SUCCESS_BIT) == 0) {
+                ESP_LOGE(TAG, "GET Request failed after multiple tries. Aborting.");
+                abort();
+            }
+
         }
         
         // Figure out how many screens are needed to display all the data
         uint16_t screens_needed = CEIL(curr_num_predictions, ROWS_PER_SCREEN);
         ESP_LOGI(TAG, "received %d predictions; need %d screens", curr_num_predictions, screens_needed);
+
+        // clearing old rows in screen
+        uint16_t remainder_rows = curr_num_predictions % ROWS_PER_SCREEN;
+        if (screens_needed > 0 && remainder_rows > 0) {
+            Screen_t *last_screen = screen_array[screens_needed - 1];
+            if (lvgl_lock(portMAX_DELAY)) {
+                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * COLS_PER_ROW; i++) {
+                    lv_label_set_text(last_screen->label_array[i], "");
+                }
+                lvgl_unlock();
+            }
+        }
         
         // switch active display periodically to show all screens needed in 15 seconds
         for (int i = 0; i < screens_needed; i++) {

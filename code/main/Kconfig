@@ -41,9 +41,25 @@ menu "Transit Tracker Configuration"
 
         config TRACKER_BUS_TOP
             int "Max number of bus predictions to receive"
-            default 3
+            default 6
             help
-                Enter the maximum number of predictions the transit app should receive
+                Enter the maximum number of bus predictions the transit app should receive
+                from the CTA servers. Enter no whitespace or other characters.
+    endif
+    
+    if TRACKER_TRAINS_ENABLED
+        config TRACKER_TRAIN_MAPID
+            string "Train station IDs to track"
+            default "41490"
+            help
+                Enter the train station IDs you want to track, separated with commans and 
+                no spaces. LIke this: "station1,station2,station3,..."
+        
+        config TRACKER_TRAIN_MAX
+            int "Max number of train predictions to receive"
+            default 5
+            help
+                Enter the maximum number of train predictions the transit app should receive
                 from the CTA servers. Enter no whitespace or other characters.
     endif
 

@@ -308,3 +308,24 @@ From here, some to-dos:
   - I could just set a longer time out
   - but the truth is that the main task is calling eventgroupwait() right when the GET request task runs, so there needs to be enough time for both the request task and the parse task to run or the main task should wait until BOTH the request task and the parse task finish (which could just be implemented using the current event group lol)
 - need to update function comments because some things have changed
+
+## Apr. 26, 2026
+
+I fixed most of the things above (I have not updated the function comments because I'm still messing with those)
+
+Now I need to think of how to integrate trains predictions into the system
+
+The overall flow is simple:
+
+1. Get bus and train predictions
+2. Print the predictions
+
+I need to consider a few things:
+
+- do I get all the predictions at the same time and then print them? OR do I get and print bus predictions and then later get and print train predictions
+  - The former may be more consistent, but may not always show the latest data, while the latter will always show the latest data but may get caught up with the GET requests
+- Do they all share one screen array?
+  - i think lowkey no
+  - it will be easier to manage if there is a train screen array and a separate bus screen array
+  - also avoids race conditions if i want to implement concurrency later (which I think may be a good idea)
+- 

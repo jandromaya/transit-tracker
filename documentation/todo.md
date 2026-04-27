@@ -27,7 +27,7 @@
   
   - [x] ~~Add delay/due functionality~~ (done apr. 7)
   
-- [ ] Make GET request parameters into variables (rn they're hard-coded)
+- [x] Make GET request parameters into variables (rn they're hard-coded)
 
 - [ ] Filter old predictions based on precition time stamp
 
@@ -35,7 +35,7 @@
 
 - [x] ~~Make sure the LED matrices work~~ (done apr. 15)
 
-- [ ] Read the matrix library documentation
+- [x] Read the matrix library documentation
 
   
   

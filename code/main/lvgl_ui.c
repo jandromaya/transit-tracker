@@ -78,15 +78,15 @@ void lvgl_ui(lv_obj_t *scr, lv_obj_t** label_array, int num) {
   snprintf(curr_screen, 2, "%d", num);
 
   // Title: Scrolling text
-  label_array[0] = create_static_label(scr, "", 0, 0, false);
-  label_array[1] = create_scrolling_label(scr, "", 0, 10000);
-  label_array[2] = create_static_label(scr, "", 0, 0, true);
-  label_array[3] = create_static_label(scr, "", 0, 10, false);
-  label_array[4] = create_scrolling_label(scr, "", 10, 10000);
-  label_array[5] = create_static_label(scr, "", 0, 10, true);
-  label_array[6] = create_static_label(scr, "", 0, 20, false);
-  label_array[7] = create_scrolling_label(scr, "", 20, 10000);
-  label_array[8] = create_static_label(scr, "", 0, 20, true);
+  label_array[0] = create_static_label(scr, curr_screen, 0, 0, false);
+  label_array[1] = create_scrolling_label(scr, curr_screen, 0, 10000);
+  label_array[2] = create_static_label(scr, curr_screen, 0, 0, true);
+  label_array[3] = create_static_label(scr, curr_screen, 0, 10, false);
+  label_array[4] = create_scrolling_label(scr, curr_screen, 10, 10000);
+  label_array[5] = create_static_label(scr, curr_screen, 0, 10, true);
+  label_array[6] = create_static_label(scr, curr_screen, 0, 20, false);
+  label_array[7] = create_scrolling_label(scr, curr_screen, 20, 10000);
+  label_array[8] = create_static_label(scr, curr_screen, 0, 20, true);
 
   ESP_LOGI(TAG, "Demo UI created");
 }
