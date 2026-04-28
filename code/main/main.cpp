@@ -23,8 +23,8 @@
 #define TRAIN_URL_ROOT      "http://lapi.transitchicago.com/api/1.0/"    // root of url
 #define TRAIN_URL_KEY       "key=" TRAIN_TRACKER_API_KEY  // api key
 #define TRAIN_URL_FORMAT    "&outputType=JSON" // format of the response
-#define TRAIN_URL_MAPID     "&mapid=41490"  // station to get info about
-#define TRAIN_URL_MAX       "&max=5"    // max number of predictions to receive
+#define TRAIN_URL_MAPID     "&mapid=" CONFIG_TRACKER_TRAIN_MAPID // station to get info about
+#define TRAIN_URL_MAX       "&max=" STR(CONFIG_TRACKER_TRAIN_MAX)    // max number of predictions to receive
 #define TRAIN_URL           TRAIN_URL_ROOT "ttarrivals.aspx?" TRAIN_URL_KEY TRAIN_URL_MAPID \
                             TRAIN_URL_MAX TRAIN_URL_FORMAT
 
@@ -34,7 +34,8 @@
 #define CONNECTION_TIMEOUT_SEC  10
 #define ROWS_PER_SCREEN         3
 #define COLS_PER_ROW            3
-#define NUM_SCREENS             CEIL(CONFIG_TRACKER_BUS_TOP, ROWS_PER_SCREEN)
+#define NUM_BUS_SCREENS         CEIL(CONFIG_TRACKER_BUS_TOP, ROWS_PER_SCREEN)
+#define NUM_TRAIN_SCREENS       CEIL(CONFIG_TRACKER_TRAIN_MAX, ROWS_PER_SCREEN)
 #define BUS_PREDICTION_BIT      BIT0
 #define TRAIN_PREDICTION_BIT    BIT1
 #define GET_SUCCESS_BIT         BIT3
@@ -51,9 +52,11 @@ static Hub75Driver *g_driver = nullptr;
 static SemaphoreHandle_t lvgl_mutex = nullptr;
 
 // Screen constants
-Screen_t *screen_array[NUM_SCREENS];
+Screen_t *bus_screen_array[NUM_BUS_SCREENS];
+Screen_t *train_screen_array[NUM_TRAIN_SCREENS];
 
-uint16_t curr_num_predictions = 0;
+uint16_t curr_bus_predictions = 0;
+uint16_t curr_train_predictions = 0;
 
 EventGroupHandle_t prediction_event_group;
 
@@ -192,8 +195,10 @@ esp_err_t connect_to_wifi(void) {
  * @param prdT cJSON* corresponding to the prdT output of API
  * @param arrT cJSON* corresponding to the arrT output of API
  */
-void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJSON *arrT)
+void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT,
+                      cJSON *arrT, cJSON *rt, cJSON *staNm, size_t prediction_count)
 {
+    // format train API response
     char time_to_arrival[8];
     if (strcmp(isApp->valuestring, "0") != 0) {
         // train is approaching
@@ -207,10 +212,12 @@ void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJ
         // train will arrive, predict when (done by converting API output to unix time)
         // and then comparing the unix time vaues with difftime
         struct tm tm_arrT;
+        // TODO: NEED TO HANDLE THIS
         if (strptime(arrT->valuestring, "%Y-%m-%dT%T", &tm_arrT) == NULL) {
             ESP_LOGE(TAG, "Couldn't change arrT to tm struct");
         }
         struct tm tm_prdT;
+        // TODO: NEED TO HANDLE THIS
         if (strptime(prdT->valuestring, "%Y-%m-%dT%T", &tm_prdT) == NULL) {
             ESP_LOGE(TAG, "Couldn't change prdT to tm struct");
         }
@@ -219,17 +226,61 @@ void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT, cJ
         time_t unix_prdT;
         unix_arrT = mktime(&tm_arrT);
         unix_prdT = mktime(&tm_prdT);
+        // TODO: NEED TO HANDLE THIS
         if ((unix_arrT == -1) || (unix_prdT == -1)) {
             ESP_LOGE(TAG, "Couldn't change arrT or prdT to unix time");
         }
         int diff = difftime(unix_arrT, unix_prdT)/60;
+        // TODO: NEED TO HANDLE THIS
         if (diff < 0) {
             ESP_LOGE(TAG, "Error, train prediction is negative (%.2f)", diff);
         }
         snprintf(time_to_arrival, sizeof(time_to_arrival), "%d", diff);
     }
+    
+    // Setting route abbreviatoins to fit and setting color codes based on CTA standard
+    char route_abbr[13];
+    if (strcmp(rt->valuestring, "Blue") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#00dea1 Blu#");
+    }
+    else if (strcmp(rt->valuestring, "Pink") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#e2a67e Pnk#");
+    }
+    else if (strcmp(rt->valuestring, "G") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#003a9b Grn#");
+    }
+    else if (strcmp(rt->valuestring, "P") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#529823 Pur#");
+    }
+    else if (strcmp(rt->valuestring, "Y") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#f900e3 Ylw#");
+    }
+    else if (strcmp(rt->valuestring, "Brn") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#621b36 Brn#");
+    }
+    else if (strcmp(rt->valuestring, "Org") == 0) {
+        snprintf(route_abbr, sizeof(route_abbr), "#f91c46 Org#");
+    }
+    else { // red
+        snprintf(route_abbr, sizeof(route_abbr), "#c6300c Red#");
+    }
+    
+    // char stop_and_dest[128];
+    // snprintf(stop_and_dest, sizeof(stop_and_dest), "%s to %s", staNm->valuestring, destNm ->valuestring);
 
-    printf("Prediction: %s - %s\n", destNm->valuestring, time_to_arrival);
+    // print the formatted response to the labels
+    size_t screen_idx = prediction_count / ROWS_PER_SCREEN;
+    size_t label_idx = (prediction_count % ROWS_PER_SCREEN) * COLS_PER_ROW;
+
+    Screen_t *curr_screen = train_screen_array[screen_idx];
+    if (lvgl_lock(portMAX_DELAY)) {
+        lv_label_set_recolor(curr_screen->label_array[label_idx], true);
+        lv_label_set_text(curr_screen->label_array[label_idx], route_abbr);
+        lv_label_set_text(curr_screen->label_array[label_idx+1], destNm->valuestring);
+        lv_label_set_text(curr_screen->label_array[label_idx+2], time_to_arrival);
+        lvgl_unlock();
+    }
+    printf("Prediction: %s, %s - %s\n", rt->valuestring, destNm->valuestring, time_to_arrival);
 }
 
 /**
@@ -273,21 +324,33 @@ void vParseAPIResponseTask(void *pvParameters)
                     cJSON *rt = cJSON_GetObjectItemCaseSensitive(prediction, "rtdd");
                     cJSON *prdctdn = cJSON_GetObjectItemCaseSensitive(prediction, "prdctdn");
                     cJSON *stpnm = cJSON_GetObjectItemCaseSensitive(prediction, "stpnm");
-                    if ((rt == NULL) || (prdctdn == NULL) || (stpnm == NULL)) {
+                    cJSON *rtdir = cJSON_GetObjectItemCaseSensitive(prediction, "rtdir");
+                    if ((rt == NULL) || (prdctdn == NULL) || (stpnm == NULL) || (rtdir == NULL)) {
                         ESP_LOGE(TAG, "Couldn't parse bus prediction");
                     }
                     else {
                         // current screen to update
-                        Screen_t *curr_screen = screen_array[screen_idx];
-                        // label_idx basically just says what row we are currently updating (something seems broken here)
-                        int label_idx = (prediction_count % ROWS_PER_SCREEN)* 3;
+                        Screen_t *curr_screen = bus_screen_array[screen_idx];
+                        // label_idx basically just says what row we are currently updating 
+                        size_t label_idx = (prediction_count % ROWS_PER_SCREEN) * 3;
+
+                        // combining direction and stop data for the middle label
+                        char dir_and_stop[128];
+                        if (strcmp(rtdir->valuestring, "Northbound") == 0) {
+                            snprintf(dir_and_stop, sizeof(dir_and_stop), "N: %s", stpnm->valuestring);
+                        } else if (strcmp(rtdir->valuestring, "Southbound") == 0) {
+                            snprintf(dir_and_stop, sizeof(dir_and_stop), "S: %s", stpnm->valuestring);
+                        } else if (strcmp(rtdir->valuestring, "Eastbound") == 0) {
+                            snprintf(dir_and_stop, sizeof(dir_and_stop), "E: %s", stpnm->valuestring);
+                        } else {
+                            snprintf(dir_and_stop, sizeof(dir_and_stop), "W: %s", stpnm->valuestring);
+                        }
+
+                        // setting the text for the labels on the screen
                         if (label_idx + 2 < ROWS_PER_SCREEN * COLS_PER_ROW){
                             if (lvgl_lock(portMAX_DELAY)) {
-                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx, screen_idx, rt->valuestring);
                                 lv_label_set_text(curr_screen->label_array[label_idx], rt->valuestring);
-                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx+1, screen_idx, stpnm->valuestring);
-                                lv_label_set_text(curr_screen->label_array[label_idx+1], stpnm->valuestring);
-                                ESP_LOGI(TAG, "Updating label %d in screen %d to %s", label_idx+2, screen_idx, prdctdn->valuestring);
+                                lv_label_set_text(curr_screen->label_array[label_idx+1], dir_and_stop);
                                 lv_label_set_text(curr_screen->label_array[label_idx+2], prdctdn->valuestring);
                                 lvgl_unlock();
                             } else {
@@ -302,7 +365,7 @@ void vParseAPIResponseTask(void *pvParameters)
                         screen_idx++;
                 }
 
-                curr_num_predictions = prediction_count;
+                curr_bus_predictions = prediction_count;
                 xEventGroupSetBits(prediction_event_group, BUS_PREDICTION_BIT);
             }
             else if (queue_data.response_type == e_cta_time) {
@@ -327,22 +390,29 @@ void vParseAPIResponseTask(void *pvParameters)
                 response = cJSON_GetObjectItem(json, "ctatt");
                 predictions = cJSON_GetObjectItem(response, "eta");
 
+                size_t prediction_count = 0;
                 cJSON_ArrayForEach(prediction, predictions) {
                     cJSON *destNm = cJSON_GetObjectItem(prediction, "destNm");
                     cJSON *isApp = cJSON_GetObjectItem(prediction, "isApp");
                     cJSON *isDly = cJSON_GetObjectItem(prediction, "isDly");
                     cJSON *prdT = cJSON_GetObjectItem(prediction, "prdT");
                     cJSON *arrT = cJSON_GetObjectItem(prediction, "arrT");
+                    cJSON *rt = cJSON_GetObjectItem(prediction, "rt");
+                    cJSON *staNm = cJSON_GetObjectItem(prediction, "staNm");
 
-                    if ((destNm == NULL) || (isApp == NULL) || (isDly == NULL) ||
-                        (prdT == NULL) || (arrT == NULL) || (destNm == NULL)) {
+                    if ((destNm == NULL) || (isApp == NULL) || (isDly == NULL) || (staNm == NULL) ||
+                        (prdT == NULL) || (arrT == NULL) || (destNm == NULL) || (rt == NULL)) {
 
                         ESP_LOGE(TAG, "Couldn't parse train prediction");
                     }
                     else {
-                        print_train_info(destNm, isApp, isDly, prdT, arrT);
+                        print_train_info(destNm, isApp, isDly, prdT, arrT, rt, staNm, prediction_count);
                     }
+                    
+                    prediction_count++;
                 }
+                curr_train_predictions = prediction_count;
+                xEventGroupSetBits(prediction_event_group, TRAIN_PREDICTION_BIT);
             }
             
             cJSON_Delete(json);
@@ -410,6 +480,35 @@ void vPerformGetRequestTask(void *pvParameters)
     }
 }
 
+/**
+ * Function that creates screens and populates screen_array with the newly-created screens.
+ * @param screen_array screen array to populate
+ * @param num_screens number of screens to create
+ * @param disp pointer to the display that the screens should be on
+ */
+void create_screens(Screen_t **screen_array, size_t num_screens, lv_disp_t *disp) {
+    if (lvgl_lock(0)) {
+        for (size_t i = 0; i < num_screens; i++) {     // initialize each screen
+            lv_obj_t *scr = lv_obj_create(NULL);
+            lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * ROWS_PER_SCREEN * COLS_PER_ROW);
+            Screen_t *screen = (Screen_t *)malloc(sizeof(Screen_t));
+            screen->screen = scr;
+            screen->label_array = label_array;
+            screen_array[i] = screen;
+            lvgl_ui(screen->screen, screen->label_array, i);
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(disp);
+        } 
+        lvgl_unlock();
+    } else {
+        ESP_LOGE(TAG, "Could not lock LVGL for UI creation!");
+    }
+}
+
+void delete_screens(){
+    // TODO
+}
+
 extern "C" void app_main(void)
 {
     esp_err_t esp_ret;
@@ -425,96 +524,81 @@ extern "C" void app_main(void)
     }
 
     // Load configuration from menuconfig
-  Hub75Config config = getMenuConfigSettings();
+    Hub75Config config = getMenuConfigSettings();
 
-  ESP_LOGI(TAG, "Configuration:");
-  ESP_LOGI(TAG, "  Panel: %dx%d pixels", config.panel_width, config.panel_height);
-  ESP_LOGI(TAG, "  Double buffering: %s", config.double_buffer ? "ENABLED" : "DISABLED");
+    ESP_LOGI(TAG, "Configuration:");
+    ESP_LOGI(TAG, "  Panel: %dx%d pixels", config.panel_width, config.panel_height);
+    ESP_LOGI(TAG, "  Double buffering: %s", config.double_buffer ? "ENABLED" : "DISABLED");
 
-  // Create and initialize HUB75 driver
-  static Hub75Driver driver(config);  // Static to persist
-  g_driver = &driver;
+    // Create and initialize HUB75 driver
+    static Hub75Driver driver(config);  // Static to persist
+    g_driver = &driver;
 
-  if (!driver.begin()) {
-    ESP_LOGE(TAG, "Failed to initialize HUB75 driver!");
-    return;
-  }
-
-  ESP_LOGI(TAG, "HUB75 driver initialized");
-  ESP_LOGI(TAG, "  Display: %ux%u pixels", driver.get_width(), driver.get_height());
-  ESP_LOGI(TAG, "  Clock: %lu Hz, Bit depth: %u, Refresh: %u Hz", (unsigned long) config.output_clock_speed,
-           HUB75_BIT_DEPTH, config.min_refresh_rate);
-  ESP_LOGI(TAG, "  Pins - R1=%d G1=%d B1=%d R2=%d G2=%d B2=%d", config.pins.r1, config.pins.g1, config.pins.b1,
-           config.pins.r2, config.pins.g2, config.pins.b2);
-  ESP_LOGI(TAG, "  Pins - A=%d B=%d C=%d D=%d E=%d CLK=%d LAT=%d OE=%d", config.pins.a, config.pins.b, config.pins.c,
-           config.pins.d, config.pins.e, config.pins.clk, config.pins.lat, config.pins.oe);
-
-  // Quick hardware test - RGB color bars
-  driver.clear();
-  ESP_LOGI(TAG, "Drawing RGB test pattern...");
-  const uint16_t bar_width = driver.get_width() / 3;
-  for (uint16_t y = 0; y < driver.get_height(); y++) {
-    for (uint16_t x = 0; x < driver.get_width(); x++) {
-      if (x < bar_width) {
-        driver.set_pixel(x, y, 255, 0, 0);  // Red
-      } else if (x < bar_width * 2) {
-        driver.set_pixel(x, y, 0, 0, 255);  // Green
-      } else {
-        driver.set_pixel(x, y, 0, 255, 0);  // Blue
-      }
+    if (!driver.begin()) {
+        ESP_LOGE(TAG, "Failed to initialize HUB75 driver!");
+        return;
     }
-  }
-  vTaskDelay(pdMS_TO_TICKS(1000));
-  driver.clear();
 
-  // Initialize LVGL
-  ESP_LOGI(TAG, "Initializing LVGL...");
+    ESP_LOGI(TAG, "HUB75 driver initialized");
+    ESP_LOGI(TAG, "  Display: %ux%u pixels", driver.get_width(), driver.get_height());
+    ESP_LOGI(TAG, "  Clock: %lu Hz, Bit depth: %u, Refresh: %u Hz", (unsigned long) config.output_clock_speed,
+            HUB75_BIT_DEPTH, config.min_refresh_rate);
+    ESP_LOGI(TAG, "  Pins - R1=%d G1=%d B1=%d R2=%d G2=%d B2=%d", config.pins.r1, config.pins.g1, config.pins.b1,
+            config.pins.r2, config.pins.g2, config.pins.b2);
+    ESP_LOGI(TAG, "  Pins - A=%d B=%d C=%d D=%d E=%d CLK=%d LAT=%d OE=%d", config.pins.a, config.pins.b, config.pins.c,
+            config.pins.d, config.pins.e, config.pins.clk, config.pins.lat, config.pins.oe);
 
-  lvgl_mutex = xSemaphoreCreateRecursiveMutex();
-  if (lvgl_mutex == nullptr) {
-    ESP_LOGE(TAG, "Failed to create LVGL mutex!");
-    return;
-  }
+    // Quick hardware test - RGB color bars
+    driver.clear();
+    ESP_LOGI(TAG, "Drawing RGB test pattern...");
+    const uint16_t bar_width = driver.get_width() / 3;
+    for (uint16_t y = 0; y < driver.get_height(); y++) {
+        for (uint16_t x = 0; x < driver.get_width(); x++) {
+            if (x < bar_width) {
+                driver.set_pixel(x, y, 255, 0, 0);  // Red
+            } else if (x < bar_width * 2) {
+                driver.set_pixel(x, y, 0, 0, 255);  // Green
+            } else {
+                driver.set_pixel(x, y, 0, 255, 0);  // Blue
+            }
+        }
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    driver.clear();
 
-  lv_init();
+    // Initialize LVGL
+    ESP_LOGI(TAG, "Initializing LVGL...");
 
-  lv_display_t *disp = lv_display_create(driver.get_width(), driver.get_height());
-  if (disp == nullptr) {
-    ESP_LOGE(TAG, "Failed to create LVGL display!");
-    return;
-  }
+    lvgl_mutex = xSemaphoreCreateRecursiveMutex();
+    if (lvgl_mutex == nullptr) {
+        ESP_LOGE(TAG, "Failed to create LVGL mutex!");
+        return;
+    }
 
-  // Set color format and create draw buffer (LVGL manages memory)
-  lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
-  lv_draw_buf_t *draw_buf = lv_draw_buf_create(driver.get_width(), driver.get_height(), LV_COLOR_FORMAT_RGB565, 0);
-  if (draw_buf == nullptr) {
-    ESP_LOGE(TAG, "Failed to create LVGL draw buffer!");
-    return;
-  }
-  lv_display_set_draw_buffers(disp, draw_buf, nullptr);
-  lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_PARTIAL);
-  lv_display_set_flush_cb(disp, lvgl_flush_cb);
+    lv_init();
 
-  ESP_LOGI(TAG, "LVGL initialized");
+    lv_display_t *disp = lv_display_create(driver.get_width(), driver.get_height());
+    if (disp == nullptr) {
+        ESP_LOGE(TAG, "Failed to create LVGL display!");
+        return;
+    }
 
-  // Creating screens
-  ESP_LOGI(TAG, "Creating screens");
-  if (lvgl_lock(0)) {
-    for (int i = 0; i < NUM_SCREENS; i++) {     // initialize each screen
-        lv_obj_t *scr = lv_obj_create(NULL);
-        lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * ROWS_PER_SCREEN * COLS_PER_ROW);
-        Screen_t *screen = (Screen_t *)malloc(sizeof(Screen_t));
-        screen->screen = scr;
-        screen->label_array = label_array;
-        screen_array[i] = screen;
-        lvgl_ui(screen->screen, screen->label_array, i);
-        lv_obj_invalidate(lv_screen_active());
-        lv_refr_now(disp);
-    } 
-    lvgl_unlock();
-  } else {
-    ESP_LOGE(TAG, "Could not lock LVGL for UI creation!");
-  }
+    // Set color format and create draw buffer (LVGL manages memory)
+    lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
+    lv_draw_buf_t *draw_buf = lv_draw_buf_create(driver.get_width(), driver.get_height(), LV_COLOR_FORMAT_RGB565, 0);
+    if (draw_buf == nullptr) {
+        ESP_LOGE(TAG, "Failed to create LVGL draw buffer!");
+        return;
+    }
+    lv_display_set_draw_buffers(disp, draw_buf, nullptr);
+    lv_display_set_render_mode(disp, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_flush_cb(disp, lvgl_flush_cb);
+
+    ESP_LOGI(TAG, "LVGL initialized");
+
+    // Creating screens
+    create_screens(bus_screen_array, NUM_BUS_SCREENS, disp);
+    create_screens(train_screen_array, NUM_TRAIN_SCREENS, disp);
 
     QueueHandle_t schedule_queue = xQueueCreate(3, sizeof(QueueData_t));
 
@@ -545,14 +629,18 @@ extern "C" void app_main(void)
     time_msg.url = TIME_URL;
     time_msg.response_type = e_cta_time;
     
-    lv_screen_load(screen_array[0]->screen);
+    lv_screen_load(bus_screen_array[0]->screen);
 
     for (;;) {
+        EventBits_t event_ret;
+        size_t screens_needed;
+        uint16_t remainder_rows;
+
         // send message to schedule queue to awaken GET request task
         xQueueSend(schedule_queue, &bus_msg, pdMS_TO_TICKS(100));
 
         // wait until the GET response is parsed
-        EventBits_t event_ret = xEventGroupWaitBits(prediction_event_group,
+        event_ret = xEventGroupWaitBits(prediction_event_group,
                             BUS_PREDICTION_BIT | GET_SUCCESS_BIT,
                             pdTRUE,
                             pdTRUE,
@@ -573,13 +661,13 @@ extern "C" void app_main(void)
         }
         
         // Figure out how many screens are needed to display all the data
-        uint16_t screens_needed = CEIL(curr_num_predictions, ROWS_PER_SCREEN);
-        ESP_LOGI(TAG, "received %d predictions; need %d screens", curr_num_predictions, screens_needed);
+        screens_needed = CEIL(curr_bus_predictions, ROWS_PER_SCREEN);
+        ESP_LOGI(TAG, "received %d predictions; need %d screens", curr_bus_predictions, screens_needed);
 
         // clearing old rows in screen
-        uint16_t remainder_rows = curr_num_predictions % ROWS_PER_SCREEN;
+        remainder_rows = curr_bus_predictions % ROWS_PER_SCREEN;
         if (screens_needed > 0 && remainder_rows > 0) {
-            Screen_t *last_screen = screen_array[screens_needed - 1];
+            Screen_t *last_screen = bus_screen_array[screens_needed - 1];
             if (lvgl_lock(portMAX_DELAY)) {
                 for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * COLS_PER_ROW; i++) {
                     lv_label_set_text(last_screen->label_array[i], "");
@@ -591,11 +679,61 @@ extern "C" void app_main(void)
         // switch active display periodically to show all screens needed in 15 seconds
         for (int i = 0; i < screens_needed; i++) {
             if (lvgl_lock(portMAX_DELAY)) {
-                lv_screen_load(screen_array[i]->screen);
+                lv_screen_load(bus_screen_array[i]->screen);
                 lvgl_unlock();
             }
             
             vTaskDelay(pdMS_TO_TICKS(15000 / screens_needed));
+        }
+
+        // send message to schedule queue to awaken GET request task
+        xQueueSend(schedule_queue, &train_msg, pdMS_TO_TICKS(100));
+
+        // wait until the GET response is parsed
+        event_ret = xEventGroupWaitBits(prediction_event_group,
+                            TRAIN_PREDICTION_BIT | GET_SUCCESS_BIT,
+                            pdTRUE,
+                            pdTRUE,
+                            pdMS_TO_TICKS(5000));
+        if ((event_ret & GET_SUCCESS_BIT) == 0) {
+            ESP_LOGE(TAG, "Still waiting on GET request...");
+            event_ret = xEventGroupWaitBits(prediction_event_group,
+                                            TRAIN_PREDICTION_BIT | GET_SUCCESS_BIT,
+                                            pdTRUE,
+                                            pdTRUE,
+                                            pdMS_TO_TICKS(5000));
+            // TODO: DEAL WITH THIS MORE GRACEFULLY
+            if ((event_ret & GET_SUCCESS_BIT) == 0) {
+                ESP_LOGE(TAG, "GET Request failed after multiple tries. Aborting.");
+                abort();
+            }
+
+        }
+        
+        // Figure out how many screens are needed to display all the data
+        screens_needed = CEIL(curr_train_predictions, ROWS_PER_SCREEN);
+        ESP_LOGI(TAG, "received %d predictions; need %d screens", curr_train_predictions, screens_needed);
+
+        // clearing old rows in screen
+        remainder_rows = curr_train_predictions % ROWS_PER_SCREEN;
+        if (screens_needed > 0 && remainder_rows > 0) {
+            Screen_t *last_screen = train_screen_array[screens_needed - 1];
+            if (lvgl_lock(portMAX_DELAY)) {
+                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * COLS_PER_ROW; i++) {
+                    lv_label_set_text(last_screen->label_array[i], "");
+                }
+                lvgl_unlock();
+            }
+        }
+        
+        // switch active display periodically to show all screens needed in 15 seconds
+        for (int i = 0; i < screens_needed; i++) {
+            if (lvgl_lock(portMAX_DELAY)) {
+                lv_screen_load(train_screen_array[i]->screen);
+                lvgl_unlock();
+            }
+            
+            vTaskDelay(pdMS_TO_TICKS(20000 / screens_needed));
         }
     }
 }

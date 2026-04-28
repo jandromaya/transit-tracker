@@ -29,8 +29,8 @@ menu "Transit Tracker Configuration"
             string "Bus routes to track"
             default "1,7,28"
             help
-                Enter the bus routes you want to track, separated with commas and no
-                spaces. Like this: "route1,route2,route3..."
+                Enter the bus routes you want to track separated with commas and no
+                spaces. Like this: "route1,route2,route3..." You can add up to ten.
 
         config TRACKER_BUS_STPIDS
             string "Bus stop IDs to track"

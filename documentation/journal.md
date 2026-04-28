@@ -328,4 +328,34 @@ I need to consider a few things:
   - i think lowkey no
   - it will be easier to manage if there is a train screen array and a separate bus screen array
   - also avoids race conditions if i want to implement concurrency later (which I think may be a good idea)
-- 
+
+Ok it's not the end of the day. I went through and created a new screen array for train screens and added a new funciton for screen creation. 
+
+Tomorrow I should try to actually get things printed on the screen (start by modifying the print_train_info funciton)
+
+## Apr. 27, 2026
+
+I did it! It now displays information for both trains and buses
+
+![Tracker displaying train times](./images/27APR26.JPG)
+
+Now I should clean up the code and add more robust error handling. I'm also considering how I display trains. Right now, it obviously doesn't show what train stop the prediction is for. While clearly this is important info, I think it would make the display overly crowded (and realistically, I will know what station the predictions are for lol)
+
+Now that I am thinking about it, I don't really show direction info for buses either...
+
+I think to show this info, I could do the following
+
+- trains
+  - [Red] [Harrison to Howard] [Min]
+  - [Color] [Station to Destination] [Min]
+- Buses
+  - [Route] [Direction - Stop] [Min]
+  - [1] [N - Michigan & 8th Street] [Min]
+
+Okay I did this. The buses work pretty well, but honeslty the trains are hard to read. I think I'm gonna keep the direction for the buses but not the trains for now. A potential solution for trains is showing the display like this:
+
+[Station to Destination] [Min], where [Station to Destination] is in the color of the station
+
+This would require a new label set up for trains, though (which I think is fine)
+
+I'm gonna start experimenting with this later. for now, I'll keep trains directionless and buses with direction.

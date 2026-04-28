@@ -20,8 +20,8 @@ static lv_obj_t* create_scrolling_label(lv_obj_t *parent, const char *text, int1
 
     // SET UP LABEL ANIMATION/STYLE
     lv_anim_init(&label_anim);
-    lv_anim_set_delay(&label_anim, 3000);
-    lv_anim_set_repeat_delay(&label_anim, 3000);
+    lv_anim_set_delay(&label_anim, 1500);
+    lv_anim_set_repeat_delay(&label_anim, 1500);
     lv_anim_set_repeat_count(&label_anim, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_duration(&label_anim, duration);
 
