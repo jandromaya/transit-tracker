@@ -33,7 +33,8 @@
 // defining helpful compile-time constants
 #define CONNECTION_TIMEOUT_SEC  10
 #define ROWS_PER_SCREEN         3
-#define COLS_PER_ROW            3
+#define BUS_COLS_PER_ROW        3
+#define TRAIN_COLS_PER_ROW      2
 #define NUM_BUS_SCREENS         CEIL(CONFIG_TRACKER_BUS_TOP, ROWS_PER_SCREEN)
 #define NUM_TRAIN_SCREENS       CEIL(CONFIG_TRACKER_TRAIN_MAX, ROWS_PER_SCREEN)
 #define BUS_PREDICTION_BIT      BIT0
@@ -64,7 +65,7 @@ EventGroupHandle_t prediction_event_group;
  * FUNCTION DEFINITIONS
  */
 // Forward declaration
-extern "C" void lvgl_ui(lv_obj_t *scr, lv_obj_t **label_array, int num);
+extern "C" void lvgl_ui(lv_obj_t *scr, lv_obj_t **label_array, int num_rows, int num_cols, bool train_ui);
 
 // LVGL mutex lock/unlock helpers
 static bool lvgl_lock(int timeout_ms) {
@@ -238,46 +239,41 @@ void print_train_info(cJSON *destNm, cJSON *isApp, cJSON *isDly, cJSON *prdT,
         snprintf(time_to_arrival, sizeof(time_to_arrival), "%d", diff);
     }
     
-    // Setting route abbreviatoins to fit and setting color codes based on CTA standard
-    char route_abbr[13];
+    // Setting color codes based on CTA standard
+    char sta_and_dest[128];
     if (strcmp(rt->valuestring, "Blue") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#00dea1 Blu#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#00dea1 %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "Pink") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#e2a67e Pnk#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#e2a67e %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "G") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#003a9b Grn#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#003a9b %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "P") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#529823 Pur#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#529823 %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "Y") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#f900e3 Ylw#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#f900e3 %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "Brn") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#621b36 Brn#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#621b36 %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else if (strcmp(rt->valuestring, "Org") == 0) {
-        snprintf(route_abbr, sizeof(route_abbr), "#f91c46 Org#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#f91c46 %s#: %s", staNm->valuestring, destNm->valuestring);
     }
     else { // red
-        snprintf(route_abbr, sizeof(route_abbr), "#c6300c Red#");
+        snprintf(sta_and_dest, sizeof(sta_and_dest), "#c6300c %s#: %s", staNm->valuestring, destNm->valuestring);
     }
-    
-    // char stop_and_dest[128];
-    // snprintf(stop_and_dest, sizeof(stop_and_dest), "%s to %s", staNm->valuestring, destNm ->valuestring);
 
     // print the formatted response to the labels
     size_t screen_idx = prediction_count / ROWS_PER_SCREEN;
-    size_t label_idx = (prediction_count % ROWS_PER_SCREEN) * COLS_PER_ROW;
+    size_t label_idx = (prediction_count % ROWS_PER_SCREEN) * TRAIN_COLS_PER_ROW;
 
     Screen_t *curr_screen = train_screen_array[screen_idx];
     if (lvgl_lock(portMAX_DELAY)) {
-        lv_label_set_recolor(curr_screen->label_array[label_idx], true);
-        lv_label_set_text(curr_screen->label_array[label_idx], route_abbr);
-        lv_label_set_text(curr_screen->label_array[label_idx+1], destNm->valuestring);
-        lv_label_set_text(curr_screen->label_array[label_idx+2], time_to_arrival);
+        lv_label_set_text(curr_screen->label_array[label_idx], sta_and_dest);
+        lv_label_set_text(curr_screen->label_array[label_idx+1], time_to_arrival);
         lvgl_unlock();
     }
     printf("Prediction: %s, %s - %s\n", rt->valuestring, destNm->valuestring, time_to_arrival);
@@ -347,7 +343,7 @@ void vParseAPIResponseTask(void *pvParameters)
                         }
 
                         // setting the text for the labels on the screen
-                        if (label_idx + 2 < ROWS_PER_SCREEN * COLS_PER_ROW){
+                        if (label_idx + 2 < ROWS_PER_SCREEN * BUS_COLS_PER_ROW){
                             if (lvgl_lock(portMAX_DELAY)) {
                                 lv_label_set_text(curr_screen->label_array[label_idx], rt->valuestring);
                                 lv_label_set_text(curr_screen->label_array[label_idx+1], dir_and_stop);
@@ -486,16 +482,22 @@ void vPerformGetRequestTask(void *pvParameters)
  * @param num_screens number of screens to create
  * @param disp pointer to the display that the screens should be on
  */
-void create_screens(Screen_t **screen_array, size_t num_screens, lv_disp_t *disp) {
+void create_screens(Screen_t **screen_array, size_t num_screens, lv_disp_t *disp, bool train_ui) {
+    int cols;
+    if (train_ui) 
+        cols = TRAIN_COLS_PER_ROW;
+    else
+        cols = BUS_COLS_PER_ROW;
+
     if (lvgl_lock(0)) {
         for (size_t i = 0; i < num_screens; i++) {     // initialize each screen
             lv_obj_t *scr = lv_obj_create(NULL);
-            lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * ROWS_PER_SCREEN * COLS_PER_ROW);
+            lv_obj_t **label_array = (lv_obj_t **)malloc(sizeof(lv_obj_t *) * ROWS_PER_SCREEN * cols);
             Screen_t *screen = (Screen_t *)malloc(sizeof(Screen_t));
             screen->screen = scr;
             screen->label_array = label_array;
             screen_array[i] = screen;
-            lvgl_ui(screen->screen, screen->label_array, i);
+            lvgl_ui(screen->screen, screen->label_array, ROWS_PER_SCREEN, cols, train_ui);
             lv_obj_invalidate(lv_screen_active());
             lv_refr_now(disp);
         } 
@@ -597,8 +599,8 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "LVGL initialized");
 
     // Creating screens
-    create_screens(bus_screen_array, NUM_BUS_SCREENS, disp);
-    create_screens(train_screen_array, NUM_TRAIN_SCREENS, disp);
+    create_screens(bus_screen_array, NUM_BUS_SCREENS, disp, false);
+    create_screens(train_screen_array, NUM_TRAIN_SCREENS, disp, true);
 
     QueueHandle_t schedule_queue = xQueueCreate(3, sizeof(QueueData_t));
 
@@ -669,7 +671,7 @@ extern "C" void app_main(void)
         if (screens_needed > 0 && remainder_rows > 0) {
             Screen_t *last_screen = bus_screen_array[screens_needed - 1];
             if (lvgl_lock(portMAX_DELAY)) {
-                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * COLS_PER_ROW; i++) {
+                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * BUS_COLS_PER_ROW; i++) {
                     lv_label_set_text(last_screen->label_array[i], "");
                 }
                 lvgl_unlock();
@@ -719,7 +721,7 @@ extern "C" void app_main(void)
         if (screens_needed > 0 && remainder_rows > 0) {
             Screen_t *last_screen = train_screen_array[screens_needed - 1];
             if (lvgl_lock(portMAX_DELAY)) {
-                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * COLS_PER_ROW; i++) {
+                for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * TRAIN_COLS_PER_ROW; i++) {
                     lv_label_set_text(last_screen->label_array[i], "");
                 }
                 lvgl_unlock();

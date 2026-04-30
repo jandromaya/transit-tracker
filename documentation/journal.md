@@ -359,3 +359,21 @@ Okay I did this. The buses work pretty well, but honeslty the trains are hard to
 This would require a new label set up for trains, though (which I think is fine)
 
 I'm gonna start experimenting with this later. for now, I'll keep trains directionless and buses with direction.
+
+## Apr. 28, 2026
+
+It's the morning right now. I started messing around with the new train layout a little bit, but I realized I'm gonna need a slightly bigger overhaul than I thought yesterday night. 
+
+Basically, I would need to have different size `label_array` variables for the bus and the train screens. This shouldn't actually be too bad; I would just have to modify `create_screens` and probably add separate `COLS_PER_ROW` macros for buses and trains.
+
+Additionally, I'll need to modify the `lvgl_ui` function to make train and bus UIs. 
+
+## Apr. 29, 2026
+
+Started work on ^ today. So far, I updated `lvgl_ui` to handle both bus and train UIs. Now I need to change how it is actually used inside `create_screens` in main.
+
+I did it! The train displays now show route, station, direction, and prediction!!!
+
+![](./images/29APR26.JPG)
+
+tomorrow i should start cleaning up the code 
