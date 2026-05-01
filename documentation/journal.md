@@ -377,3 +377,7 @@ I did it! The train displays now show route, station, direction, and prediction!
 ![](./images/29APR26.JPG)
 
 tomorrow i should start cleaning up the code 
+
+## Apr. 30, 2026
+
+I started cleaning up the code as promised. I added several helper functions, and now app_main() is much easier to follow. It also handles failed GET requests a lot more gracefully now and handles some issue with train prints better.

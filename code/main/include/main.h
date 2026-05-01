@@ -18,6 +18,8 @@
 #include <lvgl.h>
 #include "board_config.h"
 
+#define NUM_ROUTES  8
+
 /**
  * Request type, either a prediction request or a time request
  * predict_bus: a request for a prediction for a bus
@@ -28,7 +30,6 @@ typedef enum
 {
     e_bus_prediction,
     e_train_prediction,
-    e_cta_time,
 } RequestType_t;
 
 /**
@@ -51,4 +52,21 @@ typedef struct Screen
     lv_obj_t* screen;
     lv_obj_t** label_array;
 } Screen_t;
+
+typedef struct {
+    const char *route;
+    const char *color_hex;
+} RouteColor_t;
+
+static const RouteColor_t route_colors[] = {
+    {"Blue",    "#00dea1"},
+    {"Pink",    "#e2a67e"},
+    {"G",       "#003a9b"},
+    {"P",       "#529823"},   
+    {"Y",       "#f900e3"},
+    {"Brn",     "#621b36"},
+    {"Org",     "#f91c46"},
+    {"Red",     "#c6300c"},
+};
+
 #endif
