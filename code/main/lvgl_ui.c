@@ -23,8 +23,8 @@ static lv_obj_t* create_scrolling_label(lv_obj_t *parent, const char *text, int1
 
     // SET UP LABEL ANIMATION/STYLE
     lv_anim_init(&label_anim);
-    lv_anim_set_delay(&label_anim, 1500);
-    lv_anim_set_repeat_delay(&label_anim, 1500);
+    lv_anim_set_delay(&label_anim, 3000);
+    lv_anim_set_repeat_delay(&label_anim, 3000);
     lv_anim_set_repeat_count(&label_anim, LV_ANIM_REPEAT_INFINITE);
     lv_anim_set_duration(&label_anim, duration);
 
@@ -32,8 +32,7 @@ static lv_obj_t* create_scrolling_label(lv_obj_t *parent, const char *text, int1
     lv_style_set_anim(&label_style, &label_anim);
 
     // CREATE/POSITION LABEL USING STYLE
-    int16_t parent_width = lv_obj_get_width(parent);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_SCROLL_CIRCULAR);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL);
     lv_obj_set_width(label, width);
     lv_label_set_text(label, text);
     lv_obj_set_pos(label, x_pos, y_pos);

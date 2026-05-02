@@ -39,7 +39,7 @@
 #define NUM_TRAIN_SCREENS       CEIL(CONFIG_TRACKER_TRAIN_MAX, ROWS_PER_SCREEN)
 #define BUS_PREDICTION_BIT      BIT0
 #define TRAIN_PREDICTION_BIT    BIT1
-#define GET_SUCCESS_BIT         BIT3
+#define GET_FAIL_BIT            BIT3
 
 /**************************************************************************************
  * GLOBALS DEFINITIONS
@@ -432,6 +432,7 @@ void vPerformGetRequestTask(void *pvParameters)
         ret = xQueueReceive(schedule_queue, &schedule, portMAX_DELAY);
         if (ret != pdPASS) {
             ESP_LOGE(TAG, "Couldn't receive data from queue (is it empty?)");
+            xEventGroupSetBits(prediction_event_group, GET_FAIL_BIT);
         }
 
         // perform get request
@@ -443,6 +444,7 @@ void vPerformGetRequestTask(void *pvParameters)
         if (esp_ret != ESP_OK) {
             ESP_LOGE(TAG, "Error (%d): Couldn't perform GET request", esp_ret);
             free(response_buf);
+            xEventGroupSetBits(prediction_event_group, GET_FAIL_BIT);
             continue;
         }
 
@@ -454,6 +456,7 @@ void vPerformGetRequestTask(void *pvParameters)
             // queue was full, free the response buffer
             ESP_LOGE(TAG, "Processor queue full, dropping response");
             free(response_buf);
+            xEventGroupSetBits(prediction_event_group, GET_FAIL_BIT);
             continue;
         }
 
@@ -461,7 +464,6 @@ void vPerformGetRequestTask(void *pvParameters)
         ESP_LOGI(TAG, "Leaving the GET request task...");
         UBaseType_t watermark = uxTaskGetStackHighWaterMark(NULL);
         ESP_LOGI(TAG, "GET request task high water mark %lu", watermark);
-        xEventGroupSetBits(prediction_event_group, GET_SUCCESS_BIT);
     }
 }
 
@@ -592,22 +594,22 @@ esp_err_t run_prediction_cycle(RequestType_t prediction_type, QueueHandle_t &sch
         cols_per_row = BUS_COLS_PER_ROW;
         screen_array = bus_screen_array;
         event_ret = xEventGroupWaitBits(prediction_event_group,
-                            BUS_PREDICTION_BIT | GET_SUCCESS_BIT,
+                            BUS_PREDICTION_BIT | GET_FAIL_BIT,
                             pdTRUE,
-                            pdTRUE,
+                            pdFALSE,
                             pdMS_TO_TICKS(CONNECTION_TIMEOUT_SEC * 1000));
     } else {
         cols_per_row = TRAIN_COLS_PER_ROW;
         screen_array = train_screen_array;
         event_ret = xEventGroupWaitBits(prediction_event_group,
-                            TRAIN_PREDICTION_BIT | GET_SUCCESS_BIT,
+                            TRAIN_PREDICTION_BIT | GET_FAIL_BIT,
                             pdTRUE,
-                            pdTRUE,
+                            pdFALSE,
                             pdMS_TO_TICKS(CONNECTION_TIMEOUT_SEC * 1000));
     }
 
-    if ((event_ret & GET_SUCCESS_BIT) == 0) {
-        ESP_LOGE(TAG, "GET Request timed out. Dropping request.");
+    if ((event_ret & GET_FAIL_BIT) != 0) {
+        ESP_LOGE(TAG, "GET request failed. Dropping request.");
         return ESP_FAIL;
     }
 
@@ -620,7 +622,7 @@ esp_err_t run_prediction_cycle(RequestType_t prediction_type, QueueHandle_t &sch
     if (screens_needed > 0 && remainder_rows > 0) {
         Screen_t *last_screen = screen_array[screens_needed - 1];
         if (lvgl_lock(portMAX_DELAY)) {
-            for (int i = remainder_rows * ROWS_PER_SCREEN; i < ROWS_PER_SCREEN * cols_per_row; i++) {
+            for (int i = remainder_rows * cols_per_row; i < ROWS_PER_SCREEN * cols_per_row; i++) {
                 lv_label_set_text(last_screen->label_array[i], "");
             }
             lvgl_unlock();
@@ -685,13 +687,13 @@ extern "C" void app_main(void)
     rtos_ret = xTaskCreate(vPerformGetRequestTask, "Perform GET Request Task", 4096, (void *)schedule_queue, 3, NULL);
     if (rtos_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create GET request task!");
-        return;
+        abort();
     }
 
     rtos_ret = xTaskCreate(lvgl_timer_task, "lvgl timer task", 4096, NULL, 4, NULL);
     if (rtos_ret != pdPASS) {
         ESP_LOGE(TAG, "Failed to create LVGL timer task!");
-        return;
+        abort();
     }
 
     ESP_LOGI(TAG, "LVGL running, demo UI displayed");
@@ -709,18 +711,30 @@ extern "C" void app_main(void)
 
     for (;;) {
 
-        esp_ret = run_prediction_cycle(e_bus_prediction, schedule_queue, bus_msg, &curr_bus_predictions, 5000);
+        esp_ret = run_prediction_cycle(e_bus_prediction, schedule_queue, bus_msg, &curr_bus_predictions, 8000);
         if (esp_ret != ESP_OK) {
             lv_obj_t **label = bus_screen_array[0]->label_array;
-            lv_label_set_text(*label, "Bus GET Request failed...");
+
+            // Setting error text and clearing rest of screen
+            lv_label_set_text(label[0], "Bus prediction failed...");
+            for (int i = 1; i < BUS_COLS_PER_ROW * ROWS_PER_SCREEN; i++) {
+                lv_label_set_text(label[i], "");
+            }
+
             lv_screen_load(bus_screen_array[0]->screen);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
 
-        esp_ret = run_prediction_cycle(e_train_prediction, schedule_queue, train_msg, &curr_train_predictions, 5000);
+        esp_ret = run_prediction_cycle(e_train_prediction, schedule_queue, train_msg, &curr_train_predictions, 8000);
         if (esp_ret != ESP_OK) {
             lv_obj_t **label = train_screen_array[0]->label_array;
-            lv_label_set_text(*label, "Train GET Request failed...");
+            
+            // Setting error text and clearing rest of screen
+            lv_label_set_text(label[0], "Train prediction failed...");
+            for (int i = 1; i < TRAIN_COLS_PER_ROW * ROWS_PER_SCREEN; i++) {
+                lv_label_set_text(label[i], "");
+            }
+
             lv_screen_load(train_screen_array[0]->screen);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
