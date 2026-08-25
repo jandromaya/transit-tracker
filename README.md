@@ -125,7 +125,7 @@ Now you're ready to build
 
 6. Print the enclosure
 
-   1. Files in 3dprint folder of this repo
+   1. Files in 3dprinting folder of this repo
 
 7. Screw PCB to the thin part of the enclosure
 
