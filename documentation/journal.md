@@ -381,3 +381,195 @@ tomorrow i should start cleaning up the code
 ## Apr. 30, 2026
 
 I started cleaning up the code as promised. I added several helper functions, and now app_main() is much easier to follow. It also handles failed GET requests a lot more gracefully now and handles some issue with train prints better.
+
+## May 3, 2026
+
+I'm starting to work on the PCB! I'm working through a video by predictable designs and looking up stuff as I go along. So far I figured out that I'll need a TVS diode by the USB port. It basically just protects from power surges. If it detects a power surge, it shorts the signal down to ground. 
+
+I was thinking I would need one to protect the esp32s3 and a separate one to protect the matrices (because they operate at a higher voltage). Now that I'm thinking about it, though, I have been using these matrices with no such protection for a while and it has been fine, so I think I'll just keep following the tutorial and re-visit the TVS for the matrices later. For now, I will plan on just using one with the esp32
+
+[This link explains more about TVS diodes](https://solutions.mccsemi.com/understanding-tvs-diodes-a-comprehensive-guide)
+
+## May 4, 2026
+
+Today I'm still chugging along on the predictable designs tutorial
+
+https://docs.cirkitdesigner.com/component/885af448-2bdb-49bc-ae1b-0e781522c801/hub75
+
+## May 31, 2026
+
+It's been a second since the last time I wrote here. I took a semi-forced break for ~2 weeks because I went to see my brother and friends graduate college. I returned a week ago, and I have been working on the project during that time (just not documenting on here).
+
+During that time I didn't document, I was mainly troubleshooting some hardware issues. I realized that I should test out the level shifters on the breadboard before trying to add them to my PCB design. I thought this would be pretty simple, but it turned out to be a bit of a challenge.
+
+Wiring everything together with my jumper cables was messy, but I didn't have a better option, so I had to wire and re-wire things several times. I also had to dance around several pin layouts because they interacted with different options on the board (for example, I was using pin 38 for a second to drive parts of the LED matrix, but I forgot that pin 38 also drives the built-in LED on the ESP32). In hindsight, I should have just planned my pin layout BEFORE wiring things, but you live and you learn!
+
+It also turned out that one of my esp32s has something wrong with it. I wired everything correctly, but the green output kept not working (it seemed to just be floating no matter how I wired it). After switiching to a fresh esp32 I had lying around, everything seemed to work fine.
+
+Now it works, though, and I'm ready to do more serious work on the PCB. 
+
+## Jul. 30, 2026
+
+I fell off of writing on here, but the PCB just arrived!!!
+
+Lessons learned:
+
+Mark ground and power for connections to any external devices (thankfullly I figured out that I needed to check this before connecting anything, but for future reference. This could really mess things up obv)
+
+***THE SCREW THING CLOSEST TO THE HUB75 CONNECTOR IS POWER, THE ONE CLOSEST TO THE LED IS GROUND***
+
+Ok, so the ESP32 flashes fine and seems to run fine
+
+Powering the LED matrices through the PCB doesn't seem to be working
+
+- When I connected the matrices to the power on the PCB, no lights came on, but connecting the matrices to power through the wall adapter directly turned some lights on
+
+Something seems to be off about the HUB75 connections
+
+- The display just has some lights on but is not showing anything
+- SCRATCH THIS. IT WORKS FINE. THE ONLY ISSUE WAS THE HUB75 CONNECTOR
+
+The power thing is most likely just a hardware issue I can't fix without a new PCB, so I'll try fixing the hub75 issue (because I think I can fix that with software)
+
+- my pin configuration seems correct
+- i'm worried dthat the pins on the hub75 connector don't line up the way i believed/that I did it wrong
+  - Update, yeah I think I fucked up
+  - It looks like I messed up the orientation of the hub75 during wiring. still confirming this.
+
+### Identified Issues with PCB
+
+#### ISSUE 1: Wrong HUB75 orientation
+
+1. ![](./images/HUB75_2.png)
+2. On the PCB, i made the connections as if the red row was in the place of the blue row.
+3. Because the GND pins are hard-wired, I can't just change this in software unfortunately :/
+
+**One POSSIBLE solution**
+
+I *could* fix this if i finmd a way to connect the plug backwards
+
+it only goes in one way, but if i can break the plug a little bit it could work
+
+I can also just try to de-solder and solder it back on the other way
+
+## Aug. 2, 2026
+
+### My fix for the issues from Jul. 30
+
+My diagnosis of the issue was correct. To confirm my theory, I wired it using jumper cables temporarily like this:
+
+![](./images/2AUG26_1.JPG)
+
+I connected each prong of the HUB75 connector into its correct spot on the IDC female header using jumper wires. After I did this, the whole thing worked well, proving that the issues came from the HUB75 connector's orientation.
+
+To fix the issue, I first tried to de-solder the whole connector and re-solder it on the back side of the board. De-soldering the whole HUB75 connector turned out to be really hard. First I tried to wick away as much solder as possible and then melting the soldered connections while pulling on the connector to remove it from the board. I got it to move a little bit, but progress was slow and difficult. 
+
+After that, I tried adding a lot of solder so all the prongs connected, heating up all of them at once and pulling on the connector. At first, this worked a little better (and I think it would work on smaller/less clunky connectors), but after a while I just created a huge blob of solder on the other side of the board, so I aborted.
+
+FINALLY, I decided to just push the connector's pins from one side of the board to the other. To do this, I first clipped away the plastic casing of the connector. Then, pin by pin, I heated the joint, melting the solder, and pushed the pin to the other side. Once that was done, I removed excess solder, and re-soldered any joints that looked weak. Here is what the board looked like in the end:
+
+![](./images/2AUG26_4.JPG)
+
+And now here is the board connected to the matrices and displaying transit information:
+
+![](./images/2AUG26_2.JPG)
+
+Finally, here is a closeup of the connection between the board and the IDC cable (you can see the old board near the top of the photo with the jumper cables still connected and the new board closer to the bottom connected directly to the IDC cable):
+
+![](./images/2AUG26_3.JPG)
+
+Now my plan is to make an enclosure for this thing. I should also update the PCB design in case I want to make more.
+
+### Updates to make for the PCB design
+
+- Add POWER and GND symbols for the spade connectors that power the matrix
+- Re-wire the HUB75 connector the right way
+- Maybe add a button or something that you can access from outside the enclosure
+
+### Also, here is the final pinout:
+
+4 - R1
+
+5 - G1
+
+6 - B1
+
+7 - R2
+
+15 - G2
+
+16 - B2
+
+17 - A
+
+18 - B
+
+14 - C
+
+13 - D
+
+11 - LAT
+
+10 - OE
+
+9 - CLK
+
+## Aug. 4, 2026
+
+### Enclosure Considerations
+
+- The back should be flat for easy wall mounting
+  - At least have a signfificant falt portion
+- The enclosure should be easy to disassemble
+- The enclosure should be able to stand on its own (for cases where you don't want to mount to a wall)
+- The enclosure should be slim
+- The USB port shoud be accessible without opening the case
+
+## Aug. 24, 2026
+
+Today I can say I finished v1 of this project! It took me a while since the last update becuase I traveled to SF for a little over a week.
+
+The enclosure has a two pieces:
+
+![](./images/24AUG26_1.PNG)
+
+a "top" piece that screws into the LED matrix with the provided screws
+
+![](./images/24AUG26_2.PNG)
+
+a "bottom" piece that keeps the back flat and makes space for electronics. Note that this is actually closed. I just set the top layer to be see-through for visibility here.
+
+I think the enclosure achieves the things I outlined above. It's not perfect, but it works. Below is a list of things left to address for future versions of this project:
+
+### Things to address for v2
+
+**PCB**
+
+- Add POWER and GND symbols for the spade connectors that power the matrix
+- Re-wire the HUB75 connector the right way
+  - Maybe make the header ont he board a female header instead of a male header also
+- Maybe add a button or something that you can access from outside the enclosure
+
+**Enclosure**
+
+- Tilt
+  - When resting on a flat surface, the enclosure gets some tilt from the USB-C cable poking out of the bottom. This works well for keeping the tracker upright, but it is a little janky.
+  - For future versions, it would be nice for this tilt to come form the enclosure itself rather than the cable
+    - Could use some feet
+    - May need to move position of the cable (depends on PCB obv)
+- USB-C Port
+  - May need to make the hole for it a little bigger
+    - It didn't immediately work, had to make it bigger w some pliers
+  - May need to change location (see above)
+- Assembly
+  - It's a little hard to assemble
+    - Was hard to line up both pieces with the holes and each other
+    - Some of it is just due to my measurements probably being a little off/not leaving enough clearance
+    - I think the two-piece assembly isn't the best. May want to reconsider.
+  - To fix, maybe add some clearance and consider re-designing with focus on easier assembly
+
+**Software**
+
+- Bluetooth control
+- Return from error states more gracefully
+  - One day I came back home and I saw that it was just stuck in an error. Rather than getting stuck, it should show an error message and then attempt to return to normal operation?

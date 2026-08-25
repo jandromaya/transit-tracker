@@ -655,12 +655,7 @@ extern "C" void app_main(void)
 
 
     ESP_LOGI(TAG, "Transit tracker starting...");
-    
-    esp_ret = connect_to_wifi();
-    if (esp_ret != ESP_OK) {
-        ESP_LOGE(TAG, "Wi-Fi connection failed. Aborting.");
-        abort();
-    }
+
 
     ESP_LOGI(TAG, "Configuration:");
     ESP_LOGI(TAG, "  Panel: %dx%d pixels", config.panel_width, config.panel_height);
@@ -681,6 +676,12 @@ extern "C" void app_main(void)
     // Creating screens
     create_screens(bus_screen_array, NUM_BUS_SCREENS, disp, false);
     create_screens(train_screen_array, NUM_TRAIN_SCREENS, disp, true);
+    
+    esp_ret = connect_to_wifi();
+    if (esp_ret != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi connection failed. Aborting.");
+        abort();
+    }
 
     QueueHandle_t schedule_queue = xQueueCreate(3, sizeof(QueueData_t));
 
